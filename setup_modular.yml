@@ -1,0 +1,44 @@
+#params of physical system
+hamiltonian_filename: tf_ising_ferro
+coupling_constants:
+  g: 0.875
+n: 32
+region: #the region we are restricting to 
+  - 8
+  - 24
+
+beta: inf #inverse temp
+
+
+#operators involved in the convex optimization
+k: 2 #range of onebody operators
+periodic: False #boundary conditions
+k_H: 1
+H_locality: long_range
+H_range: 2 #only active if H_locality is long_range. if H_range is None, range is unlimited
+
+#parameters for computing equilibrium state
+simulator_method: tenpy
+simulator_skip_intermediate_betas: True
+simulator_dt: 1.e-3
+simulator_order: 2
+simulator_approx: II 
+
+#parameters for computing expectations
+n_threads: 4
+#chunks_per_thread: 16 #For parallelization. Generally want chunks_per_thread > 10 or so, and chunks_per_thread * n_threads << total number of threebody operators
+no_cache: False #skip loading and saving cached expectations
+overwrite_cache: False #overwrite existing cache of expectation values if it exists
+skip_checks: False
+naive_compute: False
+
+#parameters for convex optimization
+objective_order: 2
+mu: 0
+threshold: 1.e-9
+T_constraint: T>0
+
+#miscellaneous parameters
+skip_plotting: False
+printing: True
+no_save: False #skip creating a run directory and saving results there

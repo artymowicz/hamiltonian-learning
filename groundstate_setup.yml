@@ -1,0 +1,33 @@
+#params of physical system
+hamiltonian_filename: xxz
+n: 20
+coupling_constants:
+  g: 1
+beta: inf #inverse temp
+
+#operators involved in the convex optimization
+k: 2 #range of onebody operators
+periodic: False #boundary conditions
+k_H: 2
+H_locality: short_range
+H_range: 5 #if None, range is unlimited
+
+#parameters for computing equilibrium state
+simulator_method: MPS
+simulator_skip_intermediate_betas: True
+
+#parameters for computing expectations
+n_threads: 4
+no_cache: False #skip loading and saving cached expectations
+overwrite_cache: False #overwrite existing cache of expectation values if it exists
+skip_checks: True
+
+#parameters for convex optimization
+objective_order: 2
+mu: 0
+threshold: 1e-9
+
+#miscellaneous parameters
+skip_plotting: False
+printing: True
+no_save: False #skip creating a run directory and saving results there
