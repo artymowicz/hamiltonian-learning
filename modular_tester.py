@@ -2,11 +2,13 @@ import sys
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
+import itertools
 import scipy
 import os
 from simulation import Hamiltonian, EquilibriumState
 import hamiltonian_learning
 import utils
+import argparse
 
 def generateOperators(n,params):
 	k = params['k']
@@ -15,7 +17,7 @@ def generateOperators(n,params):
 	onebody_operators = utils.buildKLocalPaulis1D(n, k, periodic_bc)
 	utils.tprint('computing Hamiltonian terms')
 	if params['H_locality'] == 'short_range':
-		hamiltonian_terms = utils.buildKLocalPaulis1D(n, k, periodic_bc)
+		hamiltonian_terms = utils.buildKLocalPaulis1D(n, params['k_H'], periodic_bc)
 	elif params['H_locality'] == 'long_range':
 		hamiltonian_terms = utils.buildKLocalCorrelators1D(n,params['k_H'], periodic_bc, d_max = params['H_range'])
 	else:
@@ -107,7 +109,7 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 					' '*(4*r - len(utils.compressPauli(p)) + 2) +
 					f' :  {learned_coeff:+.10f}\n')
 
-	if params['skip_plotting'] is False and T_learned is not None:
+	if T_learned is not None:
 		if params['hamiltonian_filename'] == 'tf_ising_ferro':
 			ZZ_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 Z {k} Z {k+1}',m)] for k in range(len(region)-1)])
 			X_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'1 X {k}',m)] for k in range(len(region))])
@@ -136,17 +138,15 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 			plt.title(f"n= {n} g = {params['coupling_constants']['g']} tfi modular hamiltonian on region {tuple(params['region'])}")
 			plt.legend()
 			plt.savefig(save_dir + "/reconstructed_hamiltonian.pdf", dpi=150)
-			plt.show()
+			if params['skip_plotting'] is False:
+				plt.show()
 
 		elif params['hamiltonian_filename'] == 'xxz_Jneg':
 			XX_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 X {k} X {k+1}',m)] for k in range(len(region)-1)])
 			YY_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 Y {k} Y {k+1}',m)] for k in range(len(region)-1)])
 			ZZ_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 Z {k} Z {k+1}',m)] for k in range(len(region)-1)])
-			if XX_learned_coeffs[-1] > 1e-3:
-				normalization = XX_learned_coeffs[-1]
-			else:
-				print('skipping normalizing because learned XX coefficient on the right is too small')
-				normalization = 1
+			normalization = 1/T_learned
+
 			XX_learned_coeffs = XX_learned_coeffs/normalization
 			YY_learned_coeffs = YY_learned_coeffs/normalization
 			ZZ_learned_coeffs = ZZ_learned_coeffs/normalization
@@ -167,7 +167,8 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 			plt.title(f"n= {n} g = {params['coupling_constants']['g']} xxz modular hamiltonian on region {tuple(params['region'])}")
 			plt.legend()
 			plt.savefig(save_dir + "/reconstructed_hamiltonian.pdf", dpi=150)
-			plt.show()
+			if params['skip_plotting'] is False:
+				plt.show()
 
 		elif params['hamiltonian_filename'] == 'xxz':
 			XX_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 X {k} X {k+1}',m)] for k in range(len(region)-1)])
@@ -195,18 +196,75 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 			plt.scatter(np.arange(len(region)-1), YY_learned_coeffs, s=2, c = 'g', label = 'YY coefficient')
 			plt.scatter(np.arange(len(region)-1), ZZ_learned_coeffs, s=2, c = 'b', label = 'ZZ coefficient')
 			plt.xlabel('site')
-			plt.title(f"n= {n} g = {params['coupling_constants']['g']} xxz modular hamiltonian on half-line")
+			plt.title(f"n= {n} g = {params['coupling_constants']['g']} xxz modular hamiltonian on region {tuple(params['region'])}")
 			plt.legend()
 			plt.savefig(save_dir + "/reconstructed_hamiltonian.pdf", dpi=150)
-			plt.show()
+			if params['skip_plotting'] is False:
+				plt.show()
+		else:
+			l = ['I','X','Y','Z']
+			A_learned_coeffs = {}
+			for A in l:
+				if A == 'I':
+					continue
+				A_learned_coeffs[A] = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'1 {A} {k}',m)] for k in range(len(region))])
+				if np.max(np.abs(A_learned_coeffs[A])) > 1e-5:
+					plt.scatter(np.arange(len(region)), A_learned_coeffs[A], s=2, label = f'{A} coefficient')
+
+			try:
+				AB_learned_coeffs = {}
+				for (A,B) in itertools.product(l,repeat = 2):
+					if (A,B) == ('I','I'):
+						continue
+					AB_learned_coeffs[(A,B)] = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 {A} {k} {B} {k+1}',m)] for k in range(len(region)-1)])
+					if np.max(np.abs(AB_learned_coeffs[(A,B)])) > 1e-5:
+						plt.scatter(np.arange(len(region)-1)+0.5, AB_learned_coeffs[(A,B)], s=2, label = f'{A}{B} coefficient')
+			except KeyError:
+				pass
+
+			try:
+				AIB_learned_coeffs = {}
+				for (A,B) in itertools.product(l,repeat = 2):
+					if (A,B) == ('I','I'):
+						continue
+					AIB_learned_coeffs[(A,B)] = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 {A} {k} {B} {k+2}',m)] for k in range(len(region)-2)])
+					if np.max(np.abs(AIB_learned_coeffs[(A,B)])) > 1e-5:
+						plt.scatter(np.arange(len(region)-2)+1, AIB_learned_coeffs[(A,B)], s=2, label = f'{A}I{B} coefficient')
+			except KeyError:
+				pass
+
+			plt.xlabel('site')
+			plt.title(f"n= {n} {params['hamiltonian_filename']} {params['coupling_constants']} modular hamiltonian on region {tuple(params['region'])}")
+			plt.legend()
+			plt.savefig(save_dir + "/reconstructed_hamiltonian.pdf", dpi=150)
+			if params['skip_plotting'] is False:
+				plt.show()
+
+class ParseKwargs(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, dict())
+        for value in values:
+            key, value = value.split('=')
+            getattr(namespace, self.dest)[key] = value
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('setup_filename')
+	parser.add_argument('-k', '--kwargs', nargs='*', action=ParseKwargs)
+	args = parser.parse_args()
 
-	##load params dictionary
-	assert len(sys.argv)==2
-	setup_filename = sys.argv[1]
-	with open(setup_filename) as f:
+	with open(args.setup_filename) as f:
 		params = yaml.safe_load(f)
+
+	### overwrite coupling constants and other params with commandline kwargs
+	if args.kwargs is not None:
+		for key in args.kwargs:
+			if key in params:
+				params[key] = args.kwargs[key]
+			elif key == 'g':
+				params['coupling_constants'][key] = float(args.kwargs[key])
+			else:
+				print(f'key {key} not in params dict: no action taken')
 
 	n = params['n']
 	region = range(*tuple(params['region']))
