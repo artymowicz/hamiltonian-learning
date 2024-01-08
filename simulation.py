@@ -13,6 +13,7 @@ import os
 from tqdm import tqdm
 from multiprocessing import Pool
 import functools
+import matplotlib.pyplot as plt
 
 from tenpy.networks.mps import MPS
 from tenpy.networks.site import SpinHalfSite
@@ -85,6 +86,52 @@ class Hamiltonian:
 					' '*(4*r - len(utils.compressPauli(self.terms[i])) + 2) +
 					f' :  {self.coefficients[i]:+.6f}')
 
+	def plot(self, title, save_filename, skip_plotting, normalization = 1):
+		thresh = normalization*1e-3
+		fig = plt.figure(1)
+		ax = fig.add_subplot(111)
+
+		coeffs_dict = dict(zip(self.terms, self.coefficients))
+		l = ['X','Y','Z']
+		single_site_coeffs = {}
+		for A in l:
+			single_site_coeffs[A] = np.zeros(self.n)
+			for k in range(self.n):
+				p = utils.decompressPauli(f'1 {A} {k}',self.n)
+				if p in coeffs_dict:
+					single_site_coeffs[A][k] = normalization*coeffs_dict[p]
+
+			if np.max(np.abs(single_site_coeffs[A])) > thresh:
+				ax.scatter(np.arange(self.n), single_site_coeffs[A], s=2, label = f'{A}')
+
+		AB_learned_coeffs = {}
+		for (A,B) in itertools.product(l,repeat = 2):
+			AB_learned_coeffs[(A,B)] = np.zeros(self.n-1)
+			for k in range(self.n-1):
+				p = utils.decompressPauli(f'2 {A} {k} {B} {k+1}',self.n)
+				if p in coeffs_dict:
+					AB_learned_coeffs[(A,B)][k] = normalization*coeffs_dict[p]
+			if np.max(np.abs(AB_learned_coeffs[(A,B)])) > thresh:
+				ax.scatter(np.arange(self.n-1)+0.5, AB_learned_coeffs[(A,B)], s=2, label = f'{A}{B}')
+
+		AIB_learned_coeffs = {}
+		for (A,B) in itertools.product(l,repeat = 2):
+			AIB_learned_coeffs[(A,B)] = np.zeros(self.n-2)
+			for k in range(self.n-2):
+				p = utils.decompressPauli(f'2 {A} {k} {B} {k+2}',self.n)
+				if p in coeffs_dict:
+					AIB_learned_coeffs[(A,B)][k] = normalization*coeffs_dict[p]
+			if np.max(np.abs(AIB_learned_coeffs[(A,B)])) > thresh:
+				ax.scatter(np.arange(self.n-2)+1, AIB_learned_coeffs[(A,B)], s=2, label = f'{A}I{B}')
+
+		ax.set_xlabel('site')
+		ax.set_title(title)
+		#ax.set_xlim(right=self.n+10)
+		fig.legend(loc='outside right center')
+		fig.savefig(save_filename, dpi=150)
+		if skip_plotting is False:
+			plt.show()
+
 	def normalizedCoeffs(self,expectations_dict):
 		assert self.terms[0] == 'I'*self.n
 		out = self.coefficients
@@ -137,7 +184,7 @@ class Hamiltonian:
 		self.sort()
 
 	#couplings is a dict
-	def loadHamiltonian(self,n,filename, couplings):
+	def loadHamiltonian(self,n,filename, couplings = {}):
 		if filename[-4:] == '.txt':
 			self.loadHamiltonianFromTextFile(filename)
 			return
@@ -380,11 +427,12 @@ class EquilibriumState:
 
 		if not os.path.exists('./caches/'):
 			os.mkdir('./caches/')
+
 		filename = f"./caches/{self.H_name}_exp_cache.hdf5"
 
 		try:
-			exp_file = h5py.File(filename, 'r+')
 			utils.tprint(f'checking that cached expectations hamiltonian agrees with given one')
+			exp_file = h5py.File(filename, 'r+')
 			a = np.array_equal(np.char.decode(exp_file['/hamiltonian/terms']), self.H.terms)
 			b = np.array_equal(exp_file['/hamiltonian/coeffs'], self.H.coefficients)
 			if not (a and b):

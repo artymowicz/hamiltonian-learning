@@ -75,7 +75,7 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 	l = len(terms)
 
 	learned_coeffs_dict = dict(zip(H_learned.terms,H_learned.coefficients))
-	learned_normalization = H_learned.normalizeCoeffs(expectations_dict)
+	#learned_normalization = H_learned.normalizeCoeffs(expectations_dict)
 
 	#print(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}')
 	if params['printing']:
@@ -85,7 +85,6 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 		print('-'*len(line))
 		for p in terms:
 			learned_coeff = learned_coeffs_dict[p]
-
 			if np.abs(learned_coeff) > 1e-10:
 				print(f'{utils.compressPauli(p)}' +
 					' '*(4*r - len(utils.compressPauli(p)) + 2) +
@@ -110,6 +109,11 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 					f' :  {learned_coeff:+.10f}\n')
 
 	if T_learned is not None:
+		normalization = 1/T_learned
+		title = f"{params['hamiltonian_filename']} {params['coupling_constants']} modular hamiltonian on region {params['region']}"
+		save_filename = save_dir + "/reconstructed_hamiltonian.pdf"
+		H_learned.plot(title, save_filename, params['skip_plotting'], normalization = normalization)
+		'''
 		if params['hamiltonian_filename'] == 'tf_ising_ferro':
 			ZZ_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'2 Z {k} Z {k+1}',m)] for k in range(len(region)-1)])
 			X_learned_coeffs = np.asarray([learned_coeffs_dict[utils.decompressPauli(f'1 X {k}',m)] for k in range(len(region))])
@@ -119,7 +123,10 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 			X_learned_coeffs = normalization*X_learned_coeffs
 
 			h = -params['coupling_constants']['g']
-			k = min(1/abs(h),abs(h))
+			if h == 0:
+				k = 0
+			else:
+				k = min(1/abs(h),abs(h))
 			k_prime = np.sqrt(1-k**2)
 			if np.abs(h) < 1:
 				##ordered phase
@@ -239,6 +246,7 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 			plt.savefig(save_dir + "/reconstructed_hamiltonian.pdf", dpi=150)
 			if params['skip_plotting'] is False:
 				plt.show()
+		'''
 
 class ParseKwargs(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -265,6 +273,8 @@ if __name__ == '__main__':
 				params['coupling_constants'][key] = float(args.kwargs[key])
 			else:
 				print(f'key {key} not in params dict: no action taken')
+	utils.tprint(f'running modular_tester.py with params:')
+	utils.tprint(params)
 
 	n = params['n']
 	region = range(*tuple(params['region']))
