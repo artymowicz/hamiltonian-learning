@@ -140,6 +140,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 		if eigvals[i] > threshold:
 			cutoff = i
 			break
+	metrics['C_eigval_cutoff'] = cutoff
 	if params_dict['printing']:
 		utils.tprint(f'cutoff = {cutoff}')
 
