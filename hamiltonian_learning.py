@@ -159,10 +159,15 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	T = cp.Variable()
 	if params_dict['T_constraint'] == "T>0":
 		constraints = [T>=0, X[0] == 1]
+		constraints += [X@hamiltonian_terms_expectations == 0]
 	elif params_dict['T_constraint'] == 'T=1':
-		constraints = [T==1]
-	constraints += [X@hamiltonian_terms_expectations == 0]
+		constraints = [T==1, X[0] == 0]
+	else:
+		raise ValueError(f"T_constraint {params_dict['T_constraint']} not recognized")
+	rootC = scipy.linalg.sqrtm(C)
+	g = lambda T, logDelta, E, F_vectorized, X : -T*rootC@scipy.linalg.logm(rootC@scipy.linalg.inv(C.T)@rootC)@rootC + cp.reshape(F_vectorized@X, (r,r))
 	constraints += [T*logDelta + np.conjugate(E.T)@cp.reshape(F_vectorized@X, (r,r))@E >> 0]
+	#constraints += [g(T, logDelta, E, F_vectorized, X) >> -params_dict['mu']]
 	#constraints += [T*D_inv@logDelta@D_inv + np.conjugate(eigvecs[:,cutoff:].T)@cp.reshape(F_vectorized@X, (r,r))@eigvecs[:,cutoff:] >> 0 ]
 	#g = 0#np.random.normal(size = (l,))
 	#objective = cp.sum(cp.square(g-X))
@@ -170,6 +175,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 		objective = cp.square(cp.norm(X,2))
 	elif params_dict['objective_order'] == 1:
 		objective = cp.norm(X,1)
+	#objective = X@np.random.normal(size=h) #FOR TESTING ONLY
 	prob = cp.Problem(cp.Minimize(objective), constraints)
 	prob.solve(solver = 'MOSEK', verbose = params_dict['printing'])#, save_file = 'dump.ptf')
 	#prob.solve(solver = 'SCS', verbose = True)#, save_file = 'dump.ptf')

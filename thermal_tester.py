@@ -32,12 +32,12 @@ def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectation
 	r = max([utils.weight(p) for p in terms])
 	l = len(terms)
 
-	H_in.addTerms(['I'*n], [1])
-	in_normalization = H_in.normalizeCoeffs(expectations_dict)
-	learned_normalization = H_learned.normalizeCoeffs(expectations_dict)
+	#H_in.addTerms(['I'*n], [1])
+	#in_normalization = H_in.normalizeCoeffs(expectations_dict)
+	#learned_normalization = H_learned.normalizeCoeffs(expectations_dict)
 
-	T_in = T_in/in_normalization
-	T_learned = T_learned/learned_normalization
+	#T_in = T_in/in_normalization
+	#T_learned = T_learned/learned_normalization
 
 	in_coeffs_dict = dict(zip(H_in.terms,H_in.coefficients))
 	learned_coeffs_dict = dict(zip(H_learned.terms,H_learned.coefficients))
@@ -85,10 +85,16 @@ def generateOperators(params):
 	k = params['k']
 	periodic_bc = params['periodic']
 	utils.tprint('computing onebody operators')
-	onebody_operators = utils.buildKLocalPaulis1D(n, k, periodic_bc)
+	if params['onebody_locality'] == 'short_range':
+		onebody_operators = utils.buildKLocalPaulis1D(n, k, periodic_bc)
+	elif params['onebody_locality'] == 'long_range':
+		onebody_operators = utils.buildKLocalCorrelators1D(n,params['k'], periodic_bc, d_max = params['onebody_range'])
+	else:
+		raise ValueError(f"unrecognized value for onebody_locality: {params['onebody_locality']}")
+	
 	utils.tprint('computing Hamiltonian terms')
 	if params['H_locality'] == 'short_range':
-		hamiltonian_terms = utils.buildKLocalPaulis1D(n, k, periodic_bc)
+		hamiltonian_terms = utils.buildKLocalPaulis1D(n, params['k_H'], periodic_bc)
 	elif params['H_locality'] == 'long_range':
 		hamiltonian_terms = utils.buildKLocalCorrelators1D(n,params['k_H'], periodic_bc, d_max = params['H_range'])
 	else:
@@ -139,9 +145,38 @@ if __name__ == '__main__':
 	### run convex optimization
 	evaluator = lambda x : threebody_expectations_dict[x]
 	hamiltonian_learned_coefficients, T_learned, C, F = hamiltonian_learning.learnHamiltonianFromThermalState(params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
-	C_eigvals = scipy.linalg.eigh(C,eigvals_only = True)
+	
+	hamiltonian_learned_coefficients = hamiltonian_learned_coefficients/T_learned
+
+	### for debugging
+	C_eigvals = scipy.linalg.eigh(C,eigvals_only=True)
 	plt.scatter(np.arange(len(C_eigvals)), C_eigvals, s=2)
 	plt.title('C eigvals')
+	plt.show()
+	r = len(onebody_operators)
+	h = len(hamiltonian_terms)
+	eigvals,eigvecs = scipy.linalg.eigh(C)
+	cutoff = 0
+	for i in range(r):
+		if eigvals[i] > params['threshold']:
+			cutoff = i
+			break
+	D = np.diag(np.reciprocal(np.sqrt(eigvals[cutoff:])))
+	E = eigvecs[:,cutoff:]@D
+	D_inv = np.diag(np.sqrt(eigvals[cutoff:]))
+	Delta = np.conjugate(E.T)@C.T@E
+	logDelta = scipy.linalg.logm(Delta)
+	F_vectorized = F.toScipySparse()
+	epss = np.arange(0.5,1.5,0.01)
+	rootC = scipy.linalg.sqrtm(C)
+	f = lambda T, logDelta,eps, E, F_vectorized, X : logDelta + eps*np.conjugate(E.T)@np.reshape(F_vectorized@X, (r,r), order = 'F')@E
+	#g = lambda T, logDelta,eps, E, F_vectorized, X : -rootC@scipy.linalg.logm(rootC@scipy.linalg.inv(C.T)@rootC)@rootC + eps*np.reshape(F_vectorized@X, (r,r), order = 'F')
+	adjusted_negativities_f = np.array([scipy.linalg.eigh(f(T_learned , logDelta, eps, E, F_vectorized, hamiltonian_learned_coefficients), eigvals_only = True)[0] for eps in epss])
+	#adjusted_negativities_g = np.array([scipy.linalg.eigh(g(T_learned , logDelta, eps, E, F_vectorized, hamiltonian_learned_coefficients), eigvals_only = True)[0] for eps in epss])
+	plt.semilogy(epss, -adjusted_negativities_f, label = 'f')
+	#plt.semilogy(epss, -adjusted_negativities_g, label = 'g')
+	plt.title('adjusted_negativities')
+	plt.legend()
 	plt.show()
 
 	H_learned = Hamiltonian(params['n'], hamiltonian_terms, hamiltonian_learned_coefficients)
