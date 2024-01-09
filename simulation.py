@@ -416,7 +416,7 @@ class EquilibriumState:
 			self.metrics['tenpy_calls'] = tenpy_calls
 			self.metrics['expectations_computation_time'] = t2-t1
 		elif params['simulator_method'] == 'ED':
-			expectations = computeExpectationsED(operators)
+			expectations = self.computeExpectationsED(operators)
 		else:
 			raise ValueError("only valid input so far is 'tenpy'")
 		return expectations
