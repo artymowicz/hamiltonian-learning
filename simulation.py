@@ -833,12 +833,10 @@ def DFScomputeSingleThreadMixed(n, psi, operators):
 				onsite_term = psi.sites[k].get_op(my_to_tenpy[p[k]])
 				tensor_list = [L, B, B.conj(), onsite_term]
 				tensor_names = ['L', 'B','B*', 'O']
-				leg_contractions = [['B', 'q', 'B*', 'q*']]
-				leg_contractions += [['B', 'p', 'O', 'p']]
-				leg_contractions += [['B*', 'p*', 'O', 'p*']]
-				leg_contractions += [['L', 'vR', 'B', 'vL'], ['L', 'vR*', 'B*', 'vL*']]
+				leg_contractions = [['B', 'q', 'B*', 'q*'],['B', 'p', 'O', 'p'],['B*', 'p*', 'O', 'p*'], ['L', 'vR', 'B', 'vL'],['L', 'vR*', 'B*', 'vL*']]
+				sequence = [4,1,3,2,0]
 				open_legs = [['B', 'vR', 'vR'], ['B*', 'vR*', 'vR*']]
-				L_tensors[k+1] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs)
+				L_tensors[k+1] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs, sequence = sequence)
 				tenpy_calls += 1
 
 		out[i] = np.real(tenpy.algorithms.network_contractor.contract([L_tensors[y+1], R_tensors[y+1]], ['L', 'R'], [['L','vR','R','vL'], ['L','vR*','R','vL*']]))
@@ -846,7 +844,7 @@ def DFScomputeSingleThreadMixed(n, psi, operators):
 		previous = p
 
 	#print(f'total number of contractions = {tenpy_calls}')
-	#print(f'{tenpy_calls/l - 1:.1f} nontrivial contractions per evaluation')
+	#print(f'{tenpy_calls/l - 1} nontrivial contractions per evaluation')
 	return out, tenpy_calls
 
 #def computeThreeBodyOperators(onebody_operators, hamiltonian_terms):
