@@ -4,6 +4,8 @@ import utils
 
 import sys
 import numpy as np
+import scipy
+import matplotlib.pyplot as plt
 import yaml
 
 def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectations_dict, params, metrics):
@@ -131,11 +133,17 @@ if __name__ == '__main__':
 	state = EquilibriumState(params['n'],H,H_name,beta)
 
 	###compute all required expectation values
-	threebody_expectations_dict = state.getExpectations(threebody_operators, params)
+	threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
+	threebody_expectations_dict = dict(zip(threebody_operators,threebody_expectations))
 
 	### run convex optimization
 	evaluator = lambda x : threebody_expectations_dict[x]
 	hamiltonian_learned_coefficients, T_learned, C, F = hamiltonian_learning.learnHamiltonianFromThermalState(params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
+	C_eigvals = scipy.linalg.eigh(C,eigvals_only = True)
+	plt.scatter(np.arange(len(C_eigvals)), C_eigvals, s=2)
+	plt.title('C eigvals')
+	plt.show()
+
 	H_learned = Hamiltonian(params['n'], hamiltonian_terms, hamiltonian_learned_coefficients)
 
 	### save results
