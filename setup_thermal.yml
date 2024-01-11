@@ -1,12 +1,12 @@
 #params of physical system
 hamiltonian_filename: xxz
-n: 5
+n: 4
 coupling_constants:
-  g: -0.5
-beta: 1.5 #inverse temp
+  g: -1.5
+beta: 1. #inverse temp
 
 #operators involved in the convex optimization
-k: 3
+k: 2
 onebody_locality: short_range
 onebody_range: 2
 periodic: False #boundary conditions
@@ -15,26 +15,28 @@ H_locality: short_range
 H_range: 2 #if None, range is unlimited
 
 #parameters for computing equilibrium state
-simulator_method: ED
-simulator_skip_intermediate_betas: True
+simulator_method: tenpy
 simulator_dt: 1.e-3
 simulator_order: 2
-simulator_approx: II 
+simulator_approx: II
+MPS_no_cache: False
+MPS_overwrite_cache: False
+MPS_avoid_overwrite: True #avoid overwriting a cached MPS if it was computed using a smaller dt
 
-#parameters for computing expectations
+#parameters for computing expectations #TODO: rename these, prepending "expectations_"
 n_threads: 4
-no_cache: False #skip loading and saving cached expectations
+no_cache: True #skip loading and saving cached expectations
 overwrite_cache: False #overwrite existing cache of expectation values if it exists
 skip_checks: False
 naive_compute: False
 
 #parameters for convex optimization
-objective_order: 1
+objective: T
 mu: 1.e-6
 threshold: 1.e-8
-T_constraint: T=1
+T_constraint: T>0
 
 #miscellaneous parameters
 skip_plotting: False
 printing: True
-no_save: True #skip creating a run directory and saving results there
+no_save: False #skip creating a run directory and saving results there

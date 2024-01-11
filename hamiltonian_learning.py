@@ -49,10 +49,14 @@ def learnHamiltonianFromGroundstate(n, onebody_operators, hamiltonian_terms, exp
 	X = cp.Variable(h)
 	constraints = [X[0]==1, X@hamiltonian_coefficients_expectations == 0, cp.reshape(F_vectorized@X, (l,l))>>0]
 	#g = 0#np.random.normal(size = (l,))
-	if params_dict['objective_order'] == 2:
+	if params_dict['objective'] == 'l2':
 		objective = cp.square(cp.norm(X,2))
-	elif params_dict['objective_order'] == 1:
+	elif params_dict['objective'] == 'l1':
 		objective = cp.norm(X,1)
+	elif params_dict['objective'] == 'rand_linear':
+		objective = X@np.random.normal(size = h)
+	else:
+		raise ValueError(f"params_dict['objective'] unrecognized: {params_dict['objective']}")
 	
 	prob = cp.Problem(cp.Minimize(objective), constraints)
 	prob.solve(solver = 'MOSEK', verbose = params_dict['printing'])#, save_file = 'dump.ptf')
@@ -157,6 +161,26 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 
 	X = cp.Variable(h)
 	T = cp.Variable()
+
+	if params_dict['objective'] == 'l2':
+		objective = cp.square(cp.norm(X,2))
+	elif params_dict['objective'] == 'l1':
+		objective = cp.norm(X,1)
+	elif params_dict['objective'] == 'rand_linear':
+		objective = X@np.random.normal(size = h)
+	elif params_dict['objective'] == 'T':
+		if params_dict['T_constraint'] == 'T=1':
+			print('setting T_constraint to "T>0" because objective_constraint is "T"')
+			params_dict['T_constraint'] == 'T>0'
+		objective = T
+	elif params_dict['objective'] == 'minus_T':
+		if params_dict['T_constraint'] == 'T=1':
+			print('setting T_constraint to "T>0" because objective_constraint is "minus_T"')
+			params_dict['T_constraint'] == 'T>0'
+		objective = -T
+	else:
+		raise ValueError(f"params_dict['objective'] unrecognized: {params_dict['objective']}")
+
 	if params_dict['T_constraint'] == "T>0":
 		constraints = [T>=0, X[0] == 1]
 		constraints += [X@hamiltonian_terms_expectations == 0]
@@ -164,18 +188,16 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 		constraints = [T==1, X[0] == 0]
 	else:
 		raise ValueError(f"T_constraint {params_dict['T_constraint']} not recognized")
-	rootC = scipy.linalg.sqrtm(C)
-	g = lambda T, logDelta, E, F_vectorized, X : -T*rootC@scipy.linalg.logm(rootC@scipy.linalg.inv(C.T)@rootC)@rootC + cp.reshape(F_vectorized@X, (r,r))
+
 	constraints += [T*logDelta + np.conjugate(E.T)@cp.reshape(F_vectorized@X, (r,r))@E >> 0]
+
+	#rootC = scipy.linalg.sqrtm(C)
+	#g = lambda T, logDelta, E, F_vectorized, X : -T*rootC@scipy.linalg.logm(rootC@scipy.linalg.inv(C.T)@rootC)@rootC + cp.reshape(F_vectorized@X, (r,r))
 	#constraints += [g(T, logDelta, E, F_vectorized, X) >> -params_dict['mu']]
 	#constraints += [T*D_inv@logDelta@D_inv + np.conjugate(eigvecs[:,cutoff:].T)@cp.reshape(F_vectorized@X, (r,r))@eigvecs[:,cutoff:] >> 0 ]
 	#g = 0#np.random.normal(size = (l,))
 	#objective = cp.sum(cp.square(g-X))
-	if params_dict['objective_order'] == 2:
-		objective = cp.square(cp.norm(X,2))
-	elif params_dict['objective_order'] == 1:
-		objective = cp.norm(X,1)
-	#objective = X@np.random.normal(size=h) #FOR TESTING ONLY
+
 	prob = cp.Problem(cp.Minimize(objective), constraints)
 	prob.solve(solver = 'MOSEK', verbose = params_dict['printing'])#, save_file = 'dump.ptf')
 	#prob.solve(solver = 'SCS', verbose = True)#, save_file = 'dump.ptf')
@@ -191,6 +213,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	solver_stats = {}
 	#solver_stats['compilation_time'] = prob.compilation_time
 	solver_stats['status'] = prob.status
+	solver_stats['T_learned'] = T.value
 	solver_stats['extra_stats'] = prob.solver_stats.extra_stats
 	solver_stats['num_iters'] = prob.solver_stats.num_iters
 	solver_stats['solve_time'] = prob.solver_stats.solve_time

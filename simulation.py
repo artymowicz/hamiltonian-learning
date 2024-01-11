@@ -27,6 +27,10 @@ from tenpy.algorithms.purification import PurificationTEBD, PurificationApplyMPO
 #Generally want it larger than 10, and CHUNKS_PER_THREAD * n_threads << total number of threebody operators
 CHUNKS_PER_THREAD = 16
 
+CACHE_TOLERANCE = 1e-10
+
+BETA_SAVE_INTERVAL = 1e-1
+
 #TODO: replace with numpy native sort
 def sortNumpyArray(a, key):
 	b = list(a)
@@ -148,7 +152,10 @@ class Hamiltonian:
 		return Hamiltonian(len(region), terms_restricted, coefficients_restricted)
 
 	def normalizeCoeffs(self,expectations_dict):
-		assert self.terms[0] == 'I'*self.n
+		if 'I'*self.n not in self.terms:
+			self.terms = np.concatenate((['I'*self.n],self.terms))
+			self.coefficients = np.concatenate(([1.],self.coefficients))
+		self.sort()
 		out = self.coefficients
 		expectations = [expectations_dict[p] for p in self.terms]
 		out[0] = -out[1:]@expectations[1:]
@@ -164,7 +171,7 @@ class Hamiltonian:
 		else:
 			return 1
 
-	#MAY REFUSE TO WORK IF periodic = True AND self.terms CONTAINS TERMS OF RANGE MORE THAN n/2 TODO:FIX
+	#MAY REFUSE TO WORK IF periodic = True AND self.terms CONTAINS TERMS OF RANGE MORE THAN n/2 TODO:FIX or make it throw an exception
 	def makeTranslationInvariant(self, periodic):
 		new_terms = self.terms
 		new_terms_set = set(self.terms)
@@ -180,10 +187,8 @@ class Hamiltonian:
 
 		self.terms = new_terms
 		self.coefficients = [new_coeffs_dict[p] for p in new_terms]
-
 		self.sort()
 
-	#couplings is a dict
 	def loadHamiltonian(self,n,filename, couplings = {}):
 		if filename[-4:] == '.txt':
 			self.loadHamiltonianFromTextFile(filename)
@@ -253,7 +258,8 @@ class Hamiltonian:
 
 		self.sort()
 
-	#FOR BACKWARDS COMPATIBILITY. in the future switch to YAML only
+	# DEPRECATED ---FOR BACKWARDS COMPATIBILITY. in the future switch to YAML only
+	'''
 	def loadHamiltonianFromTextFile(self, filename):
 		identity = lambda x : x 
 		#keys are expected parameters and values are the function used to parse the corresponding value
@@ -335,6 +341,7 @@ class Hamiltonian:
 		symmetries = [] ### TODO: implement symmetries
 
 		self.n, self.terms, self.coefficients, self.symmetries = n,terms,coefficients, symmetries
+		'''
 
 ### tenpy model that will be used to compute thermal & ground states
 class generalSpinHalfModel(CouplingMPOModel):
@@ -374,7 +381,7 @@ class generalSpinHalfModel(CouplingMPOModel):
 					self.add_multi_coupling_term(coefficient, ijkl, ops_ijkl, 'Id')
 
 
-class EquilibriumState:
+class Simulator:
 	def __init__(self, n, H, H_name, beta):
 		self.n = n
 		self.H = H
@@ -383,42 +390,159 @@ class EquilibriumState:
 		self.psi = None
 		self.metrics = {}
 
-	def computeEquilibriumState(self, simulator_params):
-		method, skip_intermediate_betas = simulator_params['simulator_method'], simulator_params['simulator_skip_intermediate_betas']
-
-		### compute the state
-		if method == 'tenpy':
+	def computeEquilibriumState(self, params, return_intermediate_results = False):
+		if params['simulator_method'] == 'tenpy':
 			t1 = time.time()
 			if self.beta == np.inf:
 				utils.tprint('computing state using DMRG')
-				self.psi = computeGroundstateDMRG(self.H, simulator_params)
+				psi = computeGroundstateDMRG(self.H, params)
 				t2 = time.time()
 				self.metrics['rho_computation_time_by_DMRG'] = t2-t1
 			else:
 				utils.tprint('computing state using purification')
-				self.psi = computeThermalStateByPurification(self.H, self.beta, simulator_params)
+				betas, psis = computeThermalStateByPurification(self.H, self.beta, params)
+				psi = psis[-1]
 				t2 = time.time()
 				self.metrics['rho_computation_time_by_MPO'] = t2-t1
+		else:
+			raise ValueError(f"unrecognized value of parameter simulator_method: {params_['simulator_method']}")
+
+		if return_intermediate_results:
+			if params['simulator_method'] == 'tenpy' and self.beta < np.inf:
+				return betas, psis
+			else:
+				raise ValueError('no intermediate psis generated')
+		else:
+			return psi
+
+	def saveTenpyMPS(self,path, psi, params):
+		psi_params = {}
+		for key in params:
+			if key[:10] == 'simulator_':
+				psi_params[key] = params[key]
+
+		data = {"psi": psi,  
+		"parameters": psi_params}
+
+		if self.beta < np.inf and params['MPS_avoid_overwrite'] and os.path.exists(path):
+			try:
+				with h5py.File(path, 'r') as f:
+					try:
+						existing_cache_params = f['parameters']
+						cached_dt = existing_cache_params['simulator_dt'][()]
+						if params['simulator_dt'] > cached_dt:
+							utils.tprint(f"avoided saving over {path} because it was computed with dt = {cached_dt}")
+							return
+					except KeyError:
+						utils.tprint(f"warning: KeyError when checking existing cache at {path}")
+			except OSError:
+				utils.tprint(f"warning: OSError when checking existing cache at {path}. overwriting")
+
+
+		with h5py.File(path, 'w') as f:
+			tenpy.tools.hdf5_io.save_to_hdf5(f, data)
+
+
+	def loadTenpyMPS(self,path):
+		with h5py.File(path, 'r') as f:
+			data = tenpy.tools.hdf5_io.load_from_hdf5(f)
+		psi = data['psi']
+		psi_params = data['parameters']
+		return psi, psi_params
+
+	def loadOrComputeEquilibriumState(self, params):
+		if params['MPS_no_cache']:
+			return self.computeEquilibriumState(params, return_intermediate_results = False)
+
+		cache_filename = f"{self.H_name}__b={self.beta:.10f}__state.hdf5"
+		cache_directory = './caches/mps/'
+		cache_path = cache_directory + cache_filename
+
+		if params['MPS_overwrite_cache'] == False:
+			loading = False
+			if not os.path.exists(cache_path):
+				utils.tprint(f'mps cache {cache_filename} not found')
+			else:
+				utils.tprint(f'mps cache {cache_filename} found')
+				### some sanity checks on the cache
+				passed_sanity_check = False
+				with h5py.File(cache_path, 'r') as f:
+					#if 'psi' not in f: ## maybe put some sanity checks later
+					#	utils.tprint(f'warning: psi not found in expectations cache')
+					if False: # put sanity checks here if needed
+						pass
+					else:
+						passed_sanity_check = True
+				if passed_sanity_check:
+					loading = True
+				else:
+					tmp_file_path = cache_directory + 'tmp/' + cache_filename
+					utils.tprint(f'unable to read mps cache at {cache_path}. moving old cache to {tmp_file_path} and creating new one')
+					
+					if not os.path.exists(cache_directory + 'tmp/'):
+							os.mkdir(cache_directory + 'tmp/')
+					os.replace(cache_path, tmp_file_path)
+
+			if loading:
+				psi, psi_params = self.loadTenpyMPS(cache_path)
+				utils.tprint(f"mps state loaded from {cache_path}. params:")
+				print()
+				print(yaml.dump(psi_params))
+				return psi
+
+		#compute the state
+		if self.beta < np.inf:
+			betas, psis = self.computeEquilibriumState(params, return_intermediate_results = True)
+			if round(betas[-1],10) != round(self.beta,10):
+				utils.tprint(f'warning: highest beta was not computed, something is off by one: betas[-1] = {betas[-1]}, self.beta = {self.beta}')
+
+			utils.tprint('saving states')
+			if not os.path.exists(cache_directory):
+					os.mkdir(cache_directory)
+
+			for i in range(len(betas)):
+				save_path = cache_directory + f"{self.H_name}__b={betas[i]:.10f}__state.hdf5"
+				if True:#round(betas[i]%BETA_SAVE_INTERVAL,10) in (0, BETA_SAVE_INTERVAL):
+					utils.tprint(f'saving ' + save_path)
+					self.saveTenpyMPS(save_path, psis[i], params)
+			return psis[-1]
+		else:
+			psi = self.computeEquilibriumState(params, return_intermediate_results = False)
+			utils.tprint('saving state')
+			if not os.path.exists(cache_directory):
+					os.mkdir(cache_directory)
+
+			save_path = cache_directory + f"{self.H_name}__b={self.beta:.10f}__state.hdf5"
+			utils.tprint(f'saving ' + save_path)
+			self.saveTenpyMPS(save_path, psi, params)
+			return psi
 
 	def computeExpectations(self, operators, params):
-		if self.psi == None:
-			self.computeEquilibriumState(params)
+		if self.psi == None and params['simulator_method'] != 'ED':
+			#self.psi = self.computeEquilibriumState(params)
+			self.psi = self.loadOrComputeEquilibriumState(params)
+
 		if params['simulator_method'] == 'tenpy':
 			n_chunks = params['n_threads']*CHUNKS_PER_THREAD
 			t1 = time.time()
+
 			if self.beta == np.inf:
-				expectations, tenpy_calls = DFScomputeParallel(self.n, self.psi, operators, 
-					'pure', params['n_threads'], n_chunks, printing = params['printing'], naive = params['naive_compute'])
+				state_type = 'pure'
 			else:
-				expectations, tenpy_calls = DFScomputeParallel(self.n, self.psi, operators, 
-					'mixed', params['n_threads'], n_chunks, printing = params['printing'], naive = params['naive_compute'])
+				state_type = 'mixed'
+
+			args = (self.n, self.psi, operators, state_type, params['n_threads'], n_chunks)
+			kwargs = dict(printing = params['printing'], naive = params['naive_compute'])
+			expectations, tenpy_calls = DFScomputeParallel(*args, **kwargs)
+
 			t2 = time.time()
 			self.metrics['tenpy_calls'] = tenpy_calls
 			self.metrics['expectations_computation_time'] = t2-t1
+
 		elif params['simulator_method'] == 'ED':
 			expectations = self.computeExpectationsED(operators)
 		else:
-			raise ValueError("only valid input so far is 'tenpy'")
+			raise ValueError(f"unrecognized value of parameter simulator_method: {params['simulator_method']}")
 		return expectations
 
 	def getExpectations(self, operators, params):
@@ -428,91 +552,115 @@ class EquilibriumState:
 		if not os.path.exists('./caches/'):
 			os.mkdir('./caches/')
 
-		filename = f"./caches/{self.H_name}_exp_cache.hdf5"
+		filename = f"{self.H_name}__b={self.beta:.10f}.hdf5"
 
-		try:
-			utils.tprint(f'checking that cached expectations hamiltonian agrees with given one')
-			exp_file = h5py.File(filename, 'r+')
-			a = np.array_equal(np.char.decode(exp_file['/hamiltonian/terms']), self.H.terms)
-			b = np.array_equal(exp_file['/hamiltonian/coeffs'], self.H.coefficients)
-			if not (a and b):
-				#print(exp_file['/hamiltonian/terms'][:])
-				#print(hamiltonian.terms)
-				raise ValueError(f'cached expectations hamiltonian does not agree with given one. To recompute, remove {filename} from caches directory and rerun')
-			
-		except FileNotFoundError:
-			utils.tprint(f'expectations cache at {filename} not found. Creating one')
-			exp_file = h5py.File(filename, 'w')
-			exp_file['/hamiltonian/terms'] = np.char.encode(self.H.terms)
-			exp_file['/hamiltonian/coeffs'] = self.H.coefficients
-			exp_file.create_group('/expectations')
-
-		#expectations for a given inverse temperature beta are saved in /expectations/{beta rounded to 5 digits after decimal point} or /expectations/inf for groundstate
-		beta_str = f'{self.beta:.5f}'
-
-		if beta_str not in exp_file['expectations'].keys():
-			utils.tprint(f'cached expectations for beta = {beta_str} not found')
-		elif params['overwrite_cache']:
-			current_time_string = time.strftime("%H:%M:%S", time.localtime())
-			utils.tprint(f'overwriting expectations cache')
-			del exp_file['expectations/' + beta_str]
+		new_cache = True
+		if not os.path.exists('./caches/'+filename):
+			utils.tprint(f'expectations cache at {filename} not found')
 		else:
-			utils.tprint(f'cached expectations for beta = {beta_str} found. decoding strings')
-			cached_operators = np.char.decode(exp_file[f'expectations/{beta_str}/operators'])
-			if params['skip_checks'] is False:
-				utils.tprint(f'checking that all required expectations are cached')
+			utils.tprint(f'expectations cache {filename} found')
+			### some sanity checks on the cache
+			passed_sanity_check = False
+			with h5py.File(f'./caches/{filename}', 'r') as exp_file:
+				if '/hamiltonian/terms' not in exp_file:
+					utils.tprint(f'warning: dataset /hamiltonian/terms not found in cache at ./caches/{filename}')
+				elif '/hamiltonian/coeffs' not in exp_file:
+					utils.tprint(f'warning: dataset /hamiltonian/coeffs not found in cache at ./caches/{filename}')
+				elif '/expectations/operators' not in exp_file:
+					utils.tprint(f'warning: dataset /expectations/operators not found in cache at ./caches/{filename}')
+				elif '/expectations/exp_values' not in exp_file:
+					utils.tprint(f'warning: dataset /expectations/exp_values not found in cache at ./caches/{filename}')	
+				elif not np.array_equal(np.char.decode(exp_file['/hamiltonian/terms']), self.H.terms):
+					utils.tprint(f'warning: cached expectations hamiltonian terms do not agree with current hamiltonian')
+				elif not np.array_equal(exp_file['/hamiltonian/coeffs'], self.H.coefficients):
+					utils.tprint(f'warning: cached expectations hamiltonian coefficients do not agree with current hamiltonian')
+				else:
+					passed_sanity_check = True
+					utils.tprint(f'cache {filename} passed sanity checks')
 
-				##TODO: this can be done in numpy for speed
-				all_there = True
-				operators_set = set(cached_operators)
-				for t in operators:
-					if t not in operators_set:
-						print(f'operator {t} not found in cache')
-						all_there = False
-						break
-
-				if all_there:
-					expectations_dict = dict(zip(cached_operators,exp_file[f'expectations/{beta_str}/exp_values']))
-					utils.tprint(f'all required expectations found in cache')
-					return [expectations_dict[p] for p in operators]
+			if passed_sanity_check:
+				new_cache = False
 			else:
-				expectations_dict = dict(zip(cached_operators,exp_file[f'expectations/{beta_str}/exp_values']))
-				return [expectations_dict[p] for p in operators]
+				tmp_file_path = f'./caches/tmp/{filename}'
+				utils.tprint(f'unable to read expecations cache at ./caches/{filename}. moving old cache to {tmp_file_path}')
+				if not os.path.exists('./caches/tmp/'):
+						os.mkdir('./caches/tmp/')
+				os.replace(f'./caches/{filename}', tmp_file_path)
+			
+		if new_cache:
+			utils.tprint(f'creating expectations cache {filename}')
+			with h5py.File(f'./caches/{filename}', 'w') as exp_file:
+				exp_file['/hamiltonian/terms'] = np.char.encode(self.H.terms)
+				exp_file['/hamiltonian/coeffs'] = self.H.coefficients
+				exp_file.create_group('/expectations/')
 
+		else:
+			with h5py.File(f'./caches/{filename}', 'r') as exp_file:
+				utils.tprint(f'decoding strings')
+				cached_operators = np.char.decode(exp_file[f'expectations/operators'])
+				cached_expectations = exp_file[f'expectations/exp_values']
+				cached_expectations_dict = dict(zip(cached_operators, cached_expectations))
+
+			if params['skip_checks'] and not params['overwrite_cache']:
+				return np.array([cached_expectations_dict[p] for p in operators])
+
+			utils.tprint(f'checking that all required expectations are cached')
+			all_there = True
+			operators_set = set(cached_operators)
+
+			for t in operators:
+				if t not in operators_set:
+					print(f'operator {t} not found in cache')
+					all_there = False
+					break
+
+			if all_there:
+				utils.tprint(f'all required expectations found in cache')
+				if not params['overwrite_cache']:
+					return np.array([cached_expectations_dict[p] for p in operators])
+			
 		utils.tprint('computing expectation values using method '+ params['simulator_method'])
-		#expectations_dict, metrics = computeRequiredExpectations(hamiltonian, beta, simulator_params)
-		expectations = self.computeExpectations(operators, params)
-		expectations_dict = dict(zip(operators, expectations))
+		computed_expectations = self.computeExpectations(operators, params)
+		computed_expectations_dict = dict(zip(operators, computed_expectations))
 
-		if beta_str in exp_file['expectations'].keys():
+		if not new_cache:
 			utils.tprint('checking consistency of newly computed expectation values with old ones')
-			existing_operators = np.char.decode(exp_file[f'expectations/{beta_str}/operators'])
-			existing_expectations = exp_file[f'expectations/{beta_str}/exp_values']
-			existing_expectations_dict = dict(zip(existing_operators, existing_expectations))
+			max_difference = np.max(np.abs([cached_expectations_dict[o]-computed_expectations_dict[o] for o in operators if o in cached_expectations_dict]))
+			if max_difference < CACHE_TOLERANCE:
+				cached_expectations_dict.update(computed_expectations_dict)
+				total_operators = np.array(list(cached_expectations_dict.keys()))
+				total_operators.sort()
+				total_expectations = np.array([cached_expectations_dict[p] for p in total_operators])
+			else:
+				if not os.path.exists('./caches/tmp/'):
+					os.mkdir('./caches/tmp/')
+				tmp_file_path = f'./caches/tmp/{filename}'
+				utils.tprint(f'some expectations were not consistent with previously computed expectations (max difference = {max_difference}).'
+					+ f' moving old cache to {tmp_file_path} and overwriting')
+				if not os.path.exists('./caches/tmp/'):
+						os.mkdir('./caches/tmp/')
+				os.system(f'cp ./caches/{filename} tmp_file_path')
 
-			### TODO: test this
+				sort_indices = np.argsort(operators)
+				total_operators = operators[sort_indices]
+				total_expectations = computed_expectations[sort_indices]
+		else:
+			sort_indices = np.argsort(operators)
+			total_operators = operators[sort_indices]
+			total_expectations = computed_expectations[sort_indices]
+				
+		utils.tprint(f'saving new expectation values in ./caches/{filename}')
+		with h5py.File(f'./caches/' + filename, 'r+') as cache:
 
-			if not np.allclose([existing_expectations_dict[o]-expectations_dict[o] for o in operators if o in existing_expectations_dict],0, atol=1e-08):
-				tmp_filename = './caches/tmp.hdf5'
-				with h5py.File(tmp_filename, 'w') as tmp_file:
-					tmp_file['hamiltonian/terms'] = np.char.encode(self.H.terms)
-					tmp_file['hamiltonian/coeffs'] = self.H.coeffs
-					tmp_file[f'expectations/{beta_str}/operators'] = np.char.encode(existing_operators)
-					tmp_file[f'expectations/{beta_str}/exp_values'] = existing_expectations
-					print(f'warning: some expectations were not consistent with previously computed expectations'
-					+ 'Saving previous expectations in {tmp_filename} and overwriting')
+			if 'operators' in cache[f'expectations'].keys():
+				del cache[f'expectations/operators']
+			cache[f'expectations/operators'] = np.char.encode(total_operators)
 
-			del exp_file[f'expectations/{beta_str}/operators']
-			del exp_file[f'expectations/{beta_str}/exp_values']
+			if 'exp_values' in cache[f'expectations'].keys():
+				del cache[f'expectations/exp_values']
+			cache[f'expectations/exp_values'] = total_expectations
 
-		utils.tprint('saving expectation values just computed')
-		#TODO: this can be done purely in numpy to be faster
-		data_sorted = sorted(zip(expectations_dict.keys(),expectations_dict.values()), key = lambda x: utils.compressPauliToList(x[0]))
-		exp_file[f'expectations/{beta_str}/operators'] = np.char.encode([x[0] for x in data_sorted])
-		exp_file[f'expectations/{beta_str}/exp_values'] = [x[1] for x in data_sorted]
-
-		exp_file.close()
-		return [expectations_dict[p] for p in operators]
+		return computed_expectations
 
 	def computeExpectationsED(self, operators):
 		load = True
@@ -550,147 +698,20 @@ class EquilibriumState:
 		out = []
 		for p in tqdm(operators):
 			out.append(utils.computeExpectation(p,rho))
-		return out
-
-###DEPRECATED
-def requiredExpectations(hamiltonian, onebody_operators, hamiltonian_terms, beta, simulator_params):
-	compute = True
-
-	if simulator_params['exp_cache'] is None:
-		#return computeRequiredExpectations(hamiltonian, beta, simulator_params)
-		return computeRequiredExpectations2(hamiltonian, onebody_operators, hamiltonian_terms, beta, simulator_params)
-	filename = simulator_params['exp_cache']
-	try:
-		'''
-		with open(filename, 'rb') as f:
-			expectations_dict = pickle.load(f)
-			### TODO: check if cached expectations match hamiltonian, method, and beta
-			print(f'expectations cache found at {filename}')
-		'''
-		exp_file = h5py.File(filename, 'r+')
-		utils.tprint(f'checking that cached expectations hamiltonian agrees with given one')
-		a = np.array_equal(np.char.decode(exp_file['/hamiltonian/terms']), hamiltonian.terms)
-		b = np.array_equal(exp_file['/hamiltonian/coeffs'], hamiltonian.coefficients)
-		if not (a and b):
-			print(exp_file['/hamiltonian/terms'][:])
-			print(hamiltonian.terms)
-			raise ValueError(f'cached expectations hamiltonian does not agree with given one. To recompute, remove {filename} from caches directory and rerun')
-		
-	except FileNotFoundError:
-		utils.tprint(f'expectations cache at {filename} not found. Creating one')
-		exp_file = h5py.File(filename, 'w')
-		exp_file['/hamiltonian/terms'] = np.char.encode(hamiltonian.terms)
-		exp_file['/hamiltonian/coeffs'] = hamiltonian.coefficients
-		exp_file.create_group('/expectations')
-
-	#expectations for a given inverse temperature beta are saved in /expectations/{beta rounded to 5 digits after decimal point} or /expectations/inf for groundstate
-	beta_str = f'{beta:.5f}'
-
-	if beta_str not in exp_file['expectations'].keys():
-		utils.tprint(f'cached expectations for beta = {beta_str} not found')
-	elif simulator_params['overwrite_cache']:
-		current_time_string = time.strftime("%H:%M:%S", time.localtime())
-		utils.tprint(f'overwriting expectations cache')
-		del exp_file['expectations/' + beta_str]
-	else:
-		utils.tprint(f'cached expectations for beta = {beta_str} found. decoding strings')
-		operators = np.char.decode(exp_file[f'expectations/{beta_str}/operators'])
-		if simulator_params['skip_checks'] is False:
-			utils.tprint(f'computing required operators')
-			required_operators = generateRequiredOperators(hamiltonian.n, hamiltonian.terms, onebody_operators)
-			utils.tprint(f'checking that all required expectations are cached')
-
-			##TODO: this can be done in numpy for speed
-			all_there = True
-			operators_set = set(operators)
-			for t in required_operators:
-				if t not in operators_set:
-					print(f'operator {t} not found in cache')
-					all_there = False
-					break
-
-			if all_there:
-				expectations_dict = dict(zip(operators,exp_file[f'expectations/{beta_str}/exp_values']))
-				metrics = {}
-				return expectations_dict, metrics
-		else:
-			expectations_dict = dict(zip(operators,exp_file[f'expectations/{beta_str}/exp_values']))
-			metrics = {}
-			return expectations_dict, metrics
-
-	#print('computing expectation values using method '+ simulator_params['method'])
-	#expectations_dict, metrics = computeRequiredExpectations(hamiltonian, beta, simulator_params)
-	expectations_dict, metrics = computeRequiredExpectations2(hamiltonian, onebody_operators, hamiltonian_terms, beta, simulator_params)
-
-	if beta_str in exp_file['expectations'].keys():
-		utils.tprint('checking consistency of newly computed expectation values with old ones')
-		existing_operators = np.char.decode(exp_file[f'expectations/{beta_str}/operators'])
-		existing_expectations = exp_file[f'expectations/{beta_str}/exp_values']
-
-		### TODO: test this
-		if not numpy.allclose(existing_expectations, [expectations_dict[o] for o in existing_operators], atol=1e-08):
-			tmp_filename = './caches/tmp.hdf5'
-			with h5py.File(tmp_filename, 'w') as tmp_file:
-				tmp_file['hamiltonian/terms'] = np.char.encode(hamiltonian.terms)
-				tmp_file['hamiltonian/coeffs'] = hamiltonian.coeffs
-				tmp_file[f'expectations/{beta_str}/operators'] = np.char.encode(existing_operators)
-				tmp_file[f'expectations/{beta_str}/exp_values'] = existing_expectations
-				print(f'warning: some expectations were not consistent with previously computed expectations'
-				+ 'Saving previous expectations in {tmp_filename} and overwriting')
-
-		del exp_file[f'expectations/{beta_str}/operators']
-		del exp_file[f'expectations/{beta_str}/exp_values']
-
-	utils.tprint('saving expectation values just computed')
-	#TODO: this can be done purely in numpy to be faster
-	data_sorted = sorted(zip(expectations_dict.keys(),expectations_dict.values()), key = lambda x: utils.compressPauliToList(x[0]))
-	exp_file[f'expectations/{beta_str}/operators'] = np.char.encode([x[0] for x in data_sorted])
-	exp_file[f'expectations/{beta_str}/exp_values'] = [x[1] for x in data_sorted]
-
-	exp_file.close()
-	return expectations_dict, metrics
-
-def DFScomputeOld(n, psi, operators, printing = False):
-	l = len(operators)
-	out = np.zeros(l)
-	previous = '-'*n
-	L_tensors = [None]*n
-	tenpy_calls = 0
-	for i in range(l):
-		if i%(l//100) == 0:
-			print(f'{i/l:.0%} done')
-		p = operators[i]
-		j = utils.firstDifferingIndex(p, previous)
-		for k in range(j,n):
-			if k == 0:
-				B = psi.get_B(k)
-				onsite_term = psi.sites[k].get_op(my_to_tenpy[p[k]])
-				tensor_list = [B, B.conj(), onsite_term]
-				tensor_names = ['B','B*','O']
-				leg_contractions = [['B', 'vL', 'B*', 'vL*']] #contract trivial edge virtual index
-				leg_contractions += [['B', 'p', 'O', 'p']]
-				leg_contractions += [['B*', 'p*', 'O', 'p*']]
-				open_legs = [['B', 'vR', 'vR'], ['B*', 'vR*', 'vR*']]
-				L_tensors[k] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs)
-				tenpy_calls += 1
-			else:
-				L = L_tensors[k-1]
-				B = psi.get_B(k)
-				onsite_term = psi.sites[k].get_op(my_to_tenpy[p[k]])
-				tensor_list = [L, B, B.conj(), onsite_term]
-				tensor_names = ['L', 'B','B*', 'O']
-				leg_contractions = [['L', 'vR', 'B', 'vL'], ['L', 'vR*', 'B*', 'vL*']]
-				leg_contractions += [['B', 'p', 'O', 'p']]
-				leg_contractions += [['B*', 'p*', 'O', 'p*']]
-				open_legs = [['B', 'vR', 'vR'], ['B*', 'vR*', 'vR*']]
-				L_tensors[k] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs)
-				tenpy_calls += 1
-		out[i] = np.real(tenpy.algorithms.network_contractor.contract([L_tensors[n-1]], ['L'], [['L', 'vR','L','vR*']]))
-		tenpy_calls += 1
-
-	return dict(zip(operators,out)), tenpy_calls
+		return np.array(out)
 
 def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, printing = False, naive = False):
+	if n_threads == 1:
+		if naive:
+			return DFScomputeSingleThreadNaive(n,psi,operators)
+		else:
+			if state_type == 'pure':
+				return DFScomputeSingleThreadPure(n,psi,operators, printing = printing)
+			elif state_type == 'mixed':
+				return DFScomputeSingleThreadMixed(n,psi,operators, printing = printing)
+			else:
+				raise ValueError
+
 	if printing:
 		utils.tprint(f'computing expectation values. n_theads = {n_threads}')
 	l = len(operators)
@@ -713,7 +734,9 @@ def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, print
 	out = np.concatenate(tuple([x[0] for x in results]))
 	return out, sum([x[1] for x in results]) 
 
-def DFScomputeSingleThreadPure(n, psi, operators):
+def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
+	if printing:
+		utils.tprint(f'computing expectation values (single-threaded)')
 	l = len(operators)
 	out = np.zeros(l)
 	previous = '-'*n
@@ -780,10 +803,14 @@ def DFScomputeSingleThreadPure(n, psi, operators):
 	#print(f'{tenpy_calls/l - 1} nontrivial contractions per evaluation')
 	return out, tenpy_calls
 
-def DFScomputeSingleThreadNaive(n,psi,operators):
-	return [psi.expectation_value_term(pauliStringToTenpyTerm(n,p)) for p in operators], len(operators)
+def DFScomputeSingleThreadNaive(n,psi,operators, printing = False):
+	if printing:
+		utils.tprint(f'computing expectation values (naive method)')
+	return np.array([psi.expectation_value_term(pauliStringToTenpyTerm(n,p)) for p in operators]), len(operators)
 
-def DFScomputeSingleThreadMixed(n, psi, operators):
+def DFScomputeSingleThreadMixed(n, psi, operators, printing=False):
+	if printing:
+		utils.tprint(f'computing expectation values (single-threaded)')
 	l = len(operators)
 	out = np.zeros(l)
 	previous = '-'*n
@@ -791,8 +818,6 @@ def DFScomputeSingleThreadMixed(n, psi, operators):
 	L_tensors[0] = tenpy.linalg.np_conserved.Array.from_ndarray_trivial(np.asarray([[1]]), dtype=complex, labels=['vR', 'vR*'])
 
 	tenpy_calls = 0
-
-	#print(f'running DFSComputeNew with n = {n}, l = {l}')
 
 	###compute R_tensors
 	R_tensors = [None]*(n+1)
@@ -826,6 +851,7 @@ def DFScomputeSingleThreadMixed(n, psi, operators):
 				last_nontriv = x
 
 		y = max(j,last_nontriv)
+		#print(f'(j,y) = {(j,y)}')
 
 		for k in range(j,y+1):
 				L = L_tensors[k]
@@ -833,94 +859,40 @@ def DFScomputeSingleThreadMixed(n, psi, operators):
 				onsite_term = psi.sites[k].get_op(my_to_tenpy[p[k]])
 				tensor_list = [L, B, B.conj(), onsite_term]
 				tensor_names = ['L', 'B','B*', 'O']
+
+				### METHOD 1 -- doesn't work due to what i believe is a tenpy bug
+				'''
 				leg_contractions = [['B', 'q', 'B*', 'q*'],['B', 'p', 'O', 'p'],['B*', 'p*', 'O', 'p*'], ['L', 'vR', 'B', 'vL'],['L', 'vR*', 'B*', 'vL*']]
 				sequence = [4,1,3,2,0]
 				open_legs = [['B', 'vR', 'vR'], ['B*', 'vR*', 'vR*']]
 				L_tensors[k+1] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs, sequence = sequence)
 				tenpy_calls += 1
+				'''
+
+				### METHOD 2
+				tensors = dict(zip(tensor_names,tensor_list))
+				tmp1 = tenpy.linalg.np_conserved.tensordot(L, tensors['B*'], axes = [['vR*'],['vL*']])
+				#print(f'tmp1.shape = {tmp1.shape}')
+				tmp2 = tenpy.linalg.np_conserved.tensordot(tensors['B'], tensors['O'], axes = [['p'],['p']])
+				#print(f'tmp2.shape = {tmp2.shape}')
+				L_tensors[k+1] = tenpy.linalg.np_conserved.tensordot(tmp1, tmp2, axes = [['vR','q*','p*'],['vL','q','p*']])
+				tenpy_calls += 3
+
+
+		#print('L comparison:')
+		#print(L_tensor_manual.to_ndarray() - L_tensors[y+1].to_ndarray())
 
 		out[i] = np.real(tenpy.algorithms.network_contractor.contract([L_tensors[y+1], R_tensors[y+1]], ['L', 'R'], [['L','vR','R','vL'], ['L','vR*','R','vL*']]))
+
+		#if np.abs(np.imag(tenpy.algorithms.network_contractor.contract([L_tensors[y+1], R_tensors[y+1]], ['L', 'R'], [['L','vR','R','vL'], ['L','vR*','R','vL*']])))>1e-10:
+		#	print((p,j,y))
+		#	assert False 
 		tenpy_calls += 1
 		previous = p
 
 	#print(f'total number of contractions = {tenpy_calls}')
-	#print(f'{tenpy_calls/l - 1} nontrivial contractions per evaluation')
+	#print(f'{tenpy_calls/l} contractions per evaluation')
 	return out, tenpy_calls
-
-#def computeThreeBodyOperators(onebody_operators, hamiltonian_terms):
-#	return sorted(utils.buildTripleProductTensor(onebody_operators, hamiltonian_terms)[1])
-
-def computeRequiredExpectations2(hamiltonian, onebody_operators, hamiltonian_terms, beta, simulator_params):
-	n = hamiltonian.n
-	method, skip_intermediate_betas = simulator_params['method'], simulator_params['skip_intermediate_betas']
-
-	### compute the state
-	if method == 'tenpy':
-		t1 = time.time()
-		if beta == np.inf:
-			utils.tprint('computing state using DMRG')
-			psi = computeGroundstateDMRG(hamiltonian, simulator_params)
-		else:
-			utils.tprint('computing state using purification')
-			psi = computeThermalStateByPurification(hamiltonian,beta, simulator_params)
-		t2 = time.time()
-
-	### compute required operators, sorted 
-	threebody_operators = computeThreeBodyOperators(onebody_operators, hamiltonian_terms)
-	t3 = time.time()
-
-	### compute the expectations using DFS
-	utils.tprint('computing expectations')
-	threebody_expectations, tenpy_calls = DFScomputeParallel(n, psi, threebody_operators, 4, printing = True)
-	expectations_dict = dict(zip(threebody_operators, threebody_expectations))
-	t4 = time.time()
-
-	metrics = {}
-	metrics['rho_computation_time_by_MPO'] = t2-t1
-	metrics['threebody_operators_generate_time'] = t3-t2
-	metrics['expectations_computation_time'] = t4-t3
-	metrics['tenpy_calls'] = tenpy_calls
-	metrics['simulator_params'] = simulator_params
-
-	return expectations_dict, metrics 
-
-#DEPRECATED
-def computeRequiredExpectations(hamiltonian, beta, simulator_params):
-	n = hamiltonian.n
-	method, skip_intermediate_betas = simulator_params['method'], simulator_params['skip_intermediate_betas']
-
-	if method == 'tenpy':
-		t1 = time.time()
-		if beta == np.inf:
-			utils.tprint('computing state using DMRG')
-			psi = computeGroundstateDMRG(hamiltonian, simulator_params)
-		else:
-			utils.tprint('computing state using purification')
-			psi = computeThermalStateByPurification(hamiltonian,beta, simulator_params)
-		t2 = time.time()
-
-		#TODO: generalize this. So far works only for k=2 and locality = short_range
-		if skip_intermediate_betas:
-			utils.tprint('computing expectations')
-			#expectations_dict, tenpy_calls = computeCorrelators(n, 3,4, psi ,return_tenpy_calls = True, printing = simulator_params['printing']) 
-			expectations_dict, tenpy_calls = compute2by3correlators(n, psi, return_tenpy_calls = True, printing = simulator_params['printing']) 
-		else:
-			expectations_dicts, metrics = batchCompute2by3correlators(hamiltonian.n, psis)
-		t3 = time.time()
-
-	metrics = {}
-	metrics['rho_computation_time_by_MPO'] = t2-t1
-	metrics['expectations_computation_time_from_MPO'] = t3-t2
-	metrics['tenpy_calls'] = tenpy_calls
-	metrics['simulator_params'] = simulator_params
-
-	return expectations_dict, metrics
-
-#TODO: make this spit out a numpy str array
-#DEPRECATED
-def generateRequiredOperators(n, hamiltonian_terms, onebody_terms):
-	###TODO: write an actual function
-	return build2By3CorrelatorList(n)
 
 pauli_generators = {'X': np.array([[0,1],[1,0]], dtype = complex),
 					'Y': np.array([[0,0.-1.j],[0.+1.j,0]]),
@@ -961,6 +933,7 @@ def buildTerms(n,k):
 twosite_terms = [[(a,0), (b,1)] for (a,b) in itertools.product(tenpy_paulis,tenpy_paulis)]
 threesite_terms = [[(a,0), (b,1), (c,2)] for (a,b,c) in itertools.product(tenpy_paulis,tenpy_paulis,tenpy_paulis)]
 
+#DEPRECATED
 def build2By3CorrelatorList(n):
 	out = []
 	for x,y in itertools.product(twosite_terms, threesite_terms):
@@ -1013,9 +986,11 @@ def compute2by3correlators(n, psi, return_tenpy_calls = False, printing = True):
 	else:
 		return d
 
+### DEPRECATED
 def allTerms(k):
 	return [[(x[i],i) for i in range(k)] for x in itertools.product(tenpy_paulis, repeat = k)]
 
+### DEPRECATED
 def computeCorrelators(n, k,l, psi, return_tenpy_calls = False, printing = True):
 	d = {}
 	calls_to_tenpy = 0
@@ -1159,7 +1134,7 @@ def translates(n, pauli, periodic_bc):
 				pauli_translates.append(pauli_rotated)
 
 	return pauli_translates
-
+'''
 ### DEPRECATED
 def addTranslates(n, paulis, coefficients, periodic_bc):
 	paulis_translates = paulis
@@ -1194,6 +1169,7 @@ def addTranslates(n, paulis, coefficients, periodic_bc):
 						coefficients_translates.append(coefficients[j])
 
 	return paulis_translates, coefficients_translates
+'''
 
 def scatterPlot(l, label = None):
 	r = range(len(l))
@@ -1202,6 +1178,7 @@ def scatterPlot(l, label = None):
 	ax1.scatter(r, l , s=2, c='b', marker="s", label = label)
 	plt.show()
 
+###DEPRECTAED
 def saveState(n,psi, periodic, filename, dir = './states/'):
 	assert len(psi) == 2**n
 	with open(dir+filename, 'w') as f:
@@ -1346,12 +1323,10 @@ def computeGroundstateDMRG(H, simulator_params):
 	dmrg.run(psi, M, dmrg_params)
 	return psi
 
-##TODO: NEW SIGNATURE (hamiltonian,beta, simulator_params)
-def computeThermalStateByPurification(H, beta_max, simulator_params):
+def computeThermalStateByPurification(H, beta_max, simulator_params, final_state_only=False):
 	hamiltonian_terms = H.terms
 	coefficients = H.coefficients
 	n = H.n
-
 	dt = simulator_params['simulator_dt']
 	if simulator_params['periodic'] == False:
 		bc = 'finite'
@@ -1368,14 +1343,24 @@ def computeThermalStateByPurification(H, beta_max, simulator_params):
 	elif order == 2:
 		Us = [M.H_MPO.make_U(-d * dt, approx) for d in [0.5 + 0.5j, 0.5 - 0.5j]]
 	eng = PurificationApplyMPO(psi, Us[0], options)
-	betas = [0.]
+	if final_state_only == False:
+		betas = []
+		psis = []
 	while beta < beta_max:
+		if final_state_only == False and round(beta%BETA_SAVE_INTERVAL,10) in (0,BETA_SAVE_INTERVAL):
+			betas.append(beta)
+			psis.append(psi.copy())
 		beta += 2. * dt  # factor of 2:  |psi> ~= exp^{- dt H}, but rho = |psi><psi|
-		betas.append(beta)
 		for U in Us:
 			eng.init_env(U)  # reset environment, initialize new copy of psi
 			eng.run()  # apply U to psi
-	return psi
+	if final_state_only == False:
+		betas.append(beta)
+		psis.append(psi.copy())
+	if final_state_only:
+		return psi
+	else:
+		return betas, psis
 
 #can be called from command line to generate a state and spit out a list of expectations.
 #TODO: DELETE THIS?

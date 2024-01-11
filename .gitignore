@@ -1,4 +1,5 @@
 __pycache__/
+hamiltonians/.DS_Store
 .DS_Store
 runs/
 cluster_runs/

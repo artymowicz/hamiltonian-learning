@@ -462,9 +462,6 @@ def buildThreeBodyTermsFast(onebody_operators, hamiltonian_terms, printing = Fal
 	r = len(onebody_operators)
 	h = len(hamiltonian_terms)
 
-	if printing:
-		tprint(f'n = {n}, r = {r}, h = {h}')
-
 	onebody_operators = np.asarray(onebody_operators)
 	hamiltonian_terms = np.asarray(hamiltonian_terms)
 
@@ -654,6 +651,8 @@ def buildTripleProductTensor(onebody_operators, hamiltonian_terms, printing = Fa
 def tprint(s):
 	current_time_string = time.strftime("%H:%M:%S", time.localtime())
 	print(f'{current_time_string}: {s}')
+
+##### LOADING AND SAVING
 
 #creates a directory to save the results of the run
 def createSaveDirectory():

@@ -1,12 +1,14 @@
-from simulation import Hamiltonian, EquilibriumState
+from simulation import Hamiltonian, Simulator
 import hamiltonian_learning
 import utils
+
 
 import sys
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
 import yaml
+import argparse
 
 def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectations_dict, params, metrics):
 	if params['no_save']:
@@ -18,9 +20,9 @@ def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectation
 
 	'''
 	if params['disorder'] > 0:
-		H_in.saveToYAML(f'{save_dir}/{n}_{hamiltonian_filename}_disordered.yml')
+		H_in.saveToYAML(f"{save_dir}/{n}_{params['hamiltonian_filename']}_disordered.yml")
 	else:
-		H_in.saveToYAML(f'{save_dir}/{n}_{hamiltonian_filename}.yml')
+		H_in.saveToYAML(f"{save_dir}/{n}_{params['hamiltonian_filename']}.yml")
 	'''
 	H_in.saveToYAML(f"{save_dir}/{n}_{params['hamiltonian_filename']}.yml")
 
@@ -49,27 +51,36 @@ def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectation
 		if p in in_coeffs_dict:
 			in_coeffs[i] = in_coeffs_dict[p]
 
+	utils.tprint(f'original T = {T_in:.10e}   learned T = {T_learned:.10e}')
 	utils.tprint(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}')
 	if params['printing']:
-		utils.tprint(f"norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = params['objective_order'])}")
-		utils.tprint(f"norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = params['objective_order'])}")
+		if params['objective'] == 'l2':
+			utils.tprint(f"l2 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 2)}")
+			utils.tprint(f"l2 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 2)}")
+		else:
+			utils.tprint(f"l1 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 1)}")
+			utils.tprint(f"l1 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 1)}")
 		print()
 		line = 'term' + ' '*(4*r-1) +':  orig coeff :  learned coeff'
 		print(line)
 		print('-'*len(line))
 		for i in range(len(terms)):
-				if max(np.abs(in_coeffs[i]),np.abs(learned_coeffs[i])) > 1e-10:
+				if max(np.abs(in_coeffs[i]),np.abs(learned_coeffs[i])) > 1e-8:
 					print(f'{utils.compressPauli(terms[i])}' +
 						' '*(4*r - len(utils.compressPauli(terms[i])) + 2) +
-						f' :  {in_coeffs[i]:+.6f}  :  {learned_coeffs[i]:+.6f}')
+						f' :  {in_coeffs[i]:+.8f}  :  {learned_coeffs[i]:+.8f}')
 		print()
 
 	with open(save_dir + f'/groundstate_learning_results.txt', 'w') as f:
 		f.write(f'results of hamiltonian_learning_from_groundstate_tester.py\n\n')
 		f.write(f'original T = {T_in:.10e}   learned T = {T_learned:.10e}\n\n')
 		f.write(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}\n\n')
-		f.write(f"norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = params['objective_order'])}\n")
-		f.write(f"norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = params['objective_order'])}\n\n")
+		if params['objective'] == 'l2':
+			f.write(f"l2 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 2)}\n")
+			f.write(f"l2 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 2)}\n")
+		else:
+			f.write(f"l1 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 1)}\n")
+			f.write(f"l1 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 1)}\n")
 		line = 'term' + ' '*(4*r-1) +':  orig coeff     :  learned coeff \n'
 		f.write(line)
 		f.write('-'*(len(line)-1)+'\n')
@@ -116,12 +127,30 @@ def loadAndNameHamiltonian(params):
 	return H, H_name
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('setup_filename')
+	parser.add_argument('-g', type = float)
+	parser.add_argument('-b', '--beta', type = float)
+	parser.add_argument('-dt', '--simulator_dt', type = float)
+	parser.add_argument('-o', '--objective')
+	args = parser.parse_args()
 
 	##load params dictionary
-	assert len(sys.argv)==2
-	setup_filename = sys.argv[1]
-	with open(setup_filename) as f:
+	with open(args.setup_filename) as f:
 		params = yaml.safe_load(f)
+
+	## some parameters can be provided in the commandline, they will then override the ones in the setup file
+	if args.g is not None:
+		params['coupling_constants']['g'] = args.g
+	if args.beta is not None:
+		params['beta'] = args.beta
+	if args.simulator_dt is not None:
+		params['simulator_dt'] = args.simulator_dt
+	if args.objective is not None:
+		params['objective'] = args.objective
+
+	utils.tprint(f'running modular_tester.py with params:')
+	print(yaml.dump(params))
 
 	### load Hamiltonian and give it a descriptive name
 	H, H_name = loadAndNameHamiltonian(params)
@@ -136,52 +165,30 @@ if __name__ == '__main__':
 		beta = np.inf
 	else:
 		raise ValueError
-	state = EquilibriumState(params['n'],H,H_name,beta)
+	state = Simulator(params['n'],H,H_name,beta)
 
-	###compute all required expectation values
+	#threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
 	threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
+
+	'''
+	if state.n<10:
+		params['simulator_method'] = 'ED'
+		threebody_expectations_ED = state.getExpectations(threebody_operators, params)
+		utils.tprint(f'MSE MPS vs ED: {np.square(np.linalg.norm(threebody_expectations_ED-threebody_expectations))/len(threebody_operators)}')
+		#for i in range(len(threebody_operators)):
+		#	print(f'{threebody_operators[i]}  {threebody_expectations[i]:.4f} {threebody_expectations_ED[i]:.4f} {threebody_expectations_naive[i]:.4f}')
+	'''
 	threebody_expectations_dict = dict(zip(threebody_operators,threebody_expectations))
-
-	### run convex optimization
 	evaluator = lambda x : threebody_expectations_dict[x]
+	### run convex optimization
 	hamiltonian_learned_coefficients, T_learned, C, F = hamiltonian_learning.learnHamiltonianFromThermalState(params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
-	
-	hamiltonian_learned_coefficients = hamiltonian_learned_coefficients/T_learned
-
-	### for debugging
-	C_eigvals = scipy.linalg.eigh(C,eigvals_only=True)
-	plt.scatter(np.arange(len(C_eigvals)), C_eigvals, s=2)
-	plt.title('C eigvals')
-	plt.show()
-	r = len(onebody_operators)
-	h = len(hamiltonian_terms)
-	eigvals,eigvecs = scipy.linalg.eigh(C)
-	cutoff = 0
-	for i in range(r):
-		if eigvals[i] > params['threshold']:
-			cutoff = i
-			break
-	D = np.diag(np.reciprocal(np.sqrt(eigvals[cutoff:])))
-	E = eigvecs[:,cutoff:]@D
-	D_inv = np.diag(np.sqrt(eigvals[cutoff:]))
-	Delta = np.conjugate(E.T)@C.T@E
-	logDelta = scipy.linalg.logm(Delta)
-	F_vectorized = F.toScipySparse()
-	epss = np.arange(0.5,1.5,0.01)
-	rootC = scipy.linalg.sqrtm(C)
-	f = lambda T, logDelta,eps, E, F_vectorized, X : logDelta + eps*np.conjugate(E.T)@np.reshape(F_vectorized@X, (r,r), order = 'F')@E
-	#g = lambda T, logDelta,eps, E, F_vectorized, X : -rootC@scipy.linalg.logm(rootC@scipy.linalg.inv(C.T)@rootC)@rootC + eps*np.reshape(F_vectorized@X, (r,r), order = 'F')
-	adjusted_negativities_f = np.array([scipy.linalg.eigh(f(T_learned , logDelta, eps, E, F_vectorized, hamiltonian_learned_coefficients), eigvals_only = True)[0] for eps in epss])
-	#adjusted_negativities_g = np.array([scipy.linalg.eigh(g(T_learned , logDelta, eps, E, F_vectorized, hamiltonian_learned_coefficients), eigvals_only = True)[0] for eps in epss])
-	plt.semilogy(epss, -adjusted_negativities_f, label = 'f')
-	#plt.semilogy(epss, -adjusted_negativities_g, label = 'g')
-	plt.title('adjusted_negativities')
-	plt.legend()
-	plt.show()
+	hamiltonian_learned_coefficients = hamiltonian_learned_coefficients
 
 	H_learned = Hamiltonian(params['n'], hamiltonian_terms, hamiltonian_learned_coefficients)
+	H_in_normalization = H.normalizeCoeffs(threebody_expectations_dict)
+
 
 	### save results
-	saveLearningResults(H, H_name, 1/params['beta'], H_learned, T_learned, threebody_expectations_dict, params, state.metrics)
+	saveLearningResults(H, H_name, 1/params['beta']/H_in_normalization, H_learned, T_learned, threebody_expectations_dict, params, state.metrics)
 
 

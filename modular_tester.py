@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import itertools
 import scipy
 import os
-from simulation import Hamiltonian, EquilibriumState
+from simulation import Hamiltonian, Simulator
 import hamiltonian_learning
 import utils
 import argparse
@@ -85,10 +85,10 @@ def saveModularHamiltonianLearningResults(H_in, H_learned, T_learned, expectatio
 		print('-'*len(line))
 		for p in terms:
 			learned_coeff = learned_coeffs_dict[p]
-			if np.abs(learned_coeff) > 1e-10:
+			if np.abs(learned_coeff) > 1e-8:
 				print(f'{utils.compressPauli(p)}' +
 					' '*(4*r - len(utils.compressPauli(p)) + 2) +
-					f' :  {learned_coeff:+.6f}')
+					f' :  {learned_coeff:+.8f}')
 		print()
 
 	with open(save_dir + '/modular_tester_results.txt', 'w') as f:
@@ -258,23 +258,23 @@ class ParseKwargs(argparse.Action):
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('setup_filename')
-	parser.add_argument('-k', '--kwargs', nargs='*', action=ParseKwargs)
+	parser.add_argument('-g', type = float)
+	parser.add_argument('-o', '--objective')
 	args = parser.parse_args()
-
 	with open(args.setup_filename) as f:
 		params = yaml.safe_load(f)
 
+	### we are interested in the groundstate
+	params['beta'] = np.inf
+
 	### overwrite coupling constants and other params with commandline kwargs
-	if args.kwargs is not None:
-		for key in args.kwargs:
-			if key in params:
-				params[key] = args.kwargs[key]
-			elif key == 'g':
-				params['coupling_constants'][key] = float(args.kwargs[key])
-			else:
-				print(f'key {key} not in params dict: no action taken')
+	if args.g is not None:
+		params['coupling_constants']['g'] = args.g
+	if args.objective is not None:
+		params['objective'] = args.objective
+
 	utils.tprint(f'running modular_tester.py with params:')
-	utils.tprint(params)
+	print(yaml.dump(params))
 
 	n = params['n']
 	region = range(*tuple(params['region']))
@@ -299,7 +299,7 @@ if __name__ == '__main__':
 		beta = np.inf
 	else:
 		raise ValueError
-	state = EquilibriumState(params['n'],H,H_name,beta)
+	state = Simulator(params['n'],H,H_name,beta)
 
 	###compute all required expectation values
 	threebody_expectations =np.flip(state.getExpectations(np.flip(threebody_operators_embedded), params)) #we flip because getExpectations needs reverse order
