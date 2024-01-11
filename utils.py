@@ -657,12 +657,22 @@ def tprint(s):
 #creates a directory to save the results of the run
 def createSaveDirectory():
 	now = datetime.datetime.now()
-	dt_string = now.strftime("%d-%m-%Y_%H-%M-%S")
+	dt_string = now.strftime("%d-%m-%Y--%H-%M-%S")
 	if not os.path.exists('./runs/'):
 		os.mkdir('./runs/')
 	dirname = f'./runs/{dt_string}'
-	os.mkdir(dirname)
-	return dirname
+	if not os.path.exists(dirname):
+		os.mkdir(dirname)
+		return dirname
+	else:
+		n = 1
+		while n < 10:
+			dirname_extended = dirname + '_' + str(n)
+			if not os.path.exists(dirname_extended):
+				os.mkdir(dirname_extended)
+				return dirname_extended
+			n+= 1
+		raise RuntimeError("tried to make too many save directories with the same name")
 
 #DEPRECATED
 def saveExpectations(observables_list, expectations_list, filename):
