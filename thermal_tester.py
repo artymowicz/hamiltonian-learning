@@ -149,7 +149,7 @@ if __name__ == '__main__':
 		params['simulator_dt'] = args.simulator_dt
 	if args.objective is not None:
 		params['objective'] = args.objective
-	if args.objective is not None:
+	if args.n is not None:
 		params['n'] = args.n
 
 	utils.tprint(f'running modular_tester.py with params:')
