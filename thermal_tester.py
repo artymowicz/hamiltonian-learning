@@ -133,6 +133,7 @@ if __name__ == '__main__':
 	parser.add_argument('-b', '--beta', type = float)
 	parser.add_argument('-dt', '--simulator_dt', type = float)
 	parser.add_argument('-o', '--objective')
+	parser.add_argument('-n', type = int)
 	args = parser.parse_args()
 
 	##load params dictionary
@@ -148,6 +149,8 @@ if __name__ == '__main__':
 		params['simulator_dt'] = args.simulator_dt
 	if args.objective is not None:
 		params['objective'] = args.objective
+	if args.objective is not None:
+		params['n'] = args.n
 
 	utils.tprint(f'running modular_tester.py with params:')
 	print(yaml.dump(params))
