@@ -94,7 +94,9 @@ mu: a small offset added to the positivity of the free energy
 '''
 
 #def learnHamiltonianFromThermalState(n,onebody_operators, hamiltonian_terms, expectations_evaluator, params_dict):
-def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, expectations_evaluator, params_dict, metrics):
+def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, expectations_evaluator, params_dict, metrics, return_extras = False):
+	assert hamiltonian_terms[0]=='I'*n
+
 	if type(expectations_evaluator) == dict:
 		expectations_evaluator = lambda x: expectations_evaluator[x]
 
@@ -179,7 +181,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 			params_dict['T_constraint'] == 'T>0'
 		objective = -T
 	else:
-		raise ValueError(f"params_dict['objective'] unrecognized: {params_dict['objective']}")
+		raise ValueError(f"objective {params_dict['objective']} not recognized. Valid inputs are 'l1', 'l2, 'rand_linear', 'T', or 'minus_T'")
 
 	if params_dict['T_constraint'] == "T>0":
 		constraints = [T>=0, X[0] == 1]
@@ -187,7 +189,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	elif params_dict['T_constraint'] == 'T=1':
 		constraints = [T==1, X[0] == 0]
 	else:
-		raise ValueError(f"T_constraint {params_dict['T_constraint']} not recognized")
+		raise ValueError(f"T_constraint {params_dict['T_constraint']} not recognized. Valid inputs are 'T=1' or 'T>0'.")
 
 	constraints += [T*logDelta + np.conjugate(E.T)@cp.reshape(F_vectorized@X, (r,r))@E >> 0]
 
@@ -199,7 +201,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	#objective = cp.sum(cp.square(g-X))
 
 	prob = cp.Problem(cp.Minimize(objective), constraints)
-	prob.solve(solver = 'MOSEK', verbose = params_dict['printing'])#, save_file = 'dump.ptf')
+	prob.solve(solver = params_dict['solver'], verbose = params_dict['printing'])#, save_file = 'dump.ptf')
 	#prob.solve(solver = 'SCS', verbose = True)#, save_file = 'dump.ptf')
 
 	utils.tprint(f'solver exited with status {prob.status}')
@@ -222,7 +224,22 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 		solver_stats['negativity'] = negativity
 	metrics['solver_stats'] = solver_stats
 
-	return X.value, T.value, C, F
+	if return_extras:
+
+		extras = {}
+		extras['twobody_operators'] = twobody_operators
+		extras['threebody_operators'] = threebody_operators
+		extras['mult_tensor'] = mult_tensor
+		extras['triple_product_tensor'] = triple_product_tensor
+		extras['C'] = C
+		extras['F'] = F
+		extras['dual_vector'] = constraints[-1].dual_value
+		extras['E'] = E
+
+		
+		return X.value, T.value, extras
+	else:
+		return X.value, T.value
 
 def saveHamiltonian(observables_list, coefficients_list, filename):
 	with open(filename, 'w') as f:  

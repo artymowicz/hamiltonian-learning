@@ -10,6 +10,22 @@ import matplotlib.pyplot as plt
 import yaml
 import argparse
 
+def sensitivityAnalysis(args):
+	raise NotImplementedError
+	onebody_operators = args['onebody_operators']
+	twobody_operators = args['twobody_operators']
+	threebody_operators = args['threebody_operators']
+	expectations_dict = args['expectations_dict']
+	mult_tensor = args['mult_tensor']
+	triple_product_tensor = args['triple_product_tensor']
+	dual_vector = args['dual_vector']
+	E = args['E']
+
+	#Delta = np.conjugate(E.T)@C.T@E
+	#logDelta = scipy.linalg.logm(Delta)
+
+	### unfinished..
+
 def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectations_dict, params, metrics):
 	if params['no_save']:
 		save_dir = '.'
@@ -184,12 +200,13 @@ if __name__ == '__main__':
 	threebody_expectations_dict = dict(zip(threebody_operators,threebody_expectations))
 	evaluator = lambda x : threebody_expectations_dict[x]
 	### run convex optimization
-	hamiltonian_learned_coefficients, T_learned, C, F = hamiltonian_learning.learnHamiltonianFromThermalState(params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
+	args = (params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
+	kwargs = dict(return_extras = True)
+	hamiltonian_learned_coefficients, T_learned, extras= hamiltonian_learning.learnHamiltonianFromThermalState(*args, **kwargs)
 	hamiltonian_learned_coefficients = hamiltonian_learned_coefficients
 
 	H_learned = Hamiltonian(params['n'], hamiltonian_terms, hamiltonian_learned_coefficients)
 	H_in_normalization = H.normalizeCoeffs(threebody_expectations_dict)
-
 
 	### save results
 	saveLearningResults(H, H_name, 1/params['beta']/H_in_normalization, H_learned, T_learned, threebody_expectations_dict, params, state.metrics)
