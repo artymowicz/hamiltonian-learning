@@ -1346,11 +1346,11 @@ def computeThermalStateByPurification(H, beta_max, simulator_params, final_state
 	if final_state_only == False:
 		betas = []
 		psis = []
-	while beta < beta_max:
+
+	for beta in tqdm(np.arange(0,beta_max+2*dt, 2*dt)):# factor of 2:  |psi> ~= exp^{- dt H}, but rho = |psi><psi|
 		if final_state_only == False and round(beta%BETA_SAVE_INTERVAL,10) in (0,BETA_SAVE_INTERVAL):
 			betas.append(beta)
 			psis.append(psi.copy())
-		beta += 2. * dt  # factor of 2:  |psi> ~= exp^{- dt H}, but rho = |psi><psi|
 		for U in Us:
 			eng.init_env(U)  # reset environment, initialize new copy of psi
 			eng.run()  # apply U to psi

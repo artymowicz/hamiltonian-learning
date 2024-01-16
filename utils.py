@@ -5,21 +5,150 @@ import functools as ft
 import datetime
 import os
 import time
-
+from matplotlib import colormaps
+import matplotlib.pyplot as plt
 
 class SparseTensor:
-	def __init__(self, shape, indices, values, order = False):
-		self.shape = np.asarray(shape, dtype = int)
-		self.indices = np.asarray(indices, dtype = int)
-		self.values = np.asarray(values)
-		assert self.indices.shape == (len(self.values), len(self.shape))
-		for i in range(len(shape)):
-			assert max(self.indices[:,i])<self.shape[i]
-		if order:
-			self.order()
+	def __init__(self,*args, order = False, dtype = None):
+		if len(args) == 3:
+			shape, indices, values = args
+			self.shape = np.asarray(shape, dtype = int)
+			self.indices = np.asarray(indices, dtype = int)
+			self.values = np.asarray(values, dtype = None)
+			assert self.indices.shape == (len(self.values), len(self.shape))
+			for i in range(len(shape)):
+				assert max(self.indices[:,i])<self.shape[i]
+			if order:
+				self.order()
+
+		#Initialize from a dense matrix. Not meant to be run on large matrices, used only for testing
+		elif len(args) == 1:
+			array_like = args[0]
+			self.shape = np.array(array_like.shape)
+			indices = []
+			values = []
+			it = np.nditer(array_like, flags=['multi_index'])
+			for val in it:
+				if val != 0:
+					indices.append(it.multi_index)
+					values.append(val)
+			self.indices = np.array(indices)
+			self.values = np.array(values, dtype = dtype)
+		else:
+			return TypeError(f'SparseTensor.__init__ called with {len(args)} arguments, expected 1 or 3')
 
 	def __str__(self):
 		return f'SparseTensor of shape {self.shape} with {len(self.values)} stored elements'
+
+	def __add__(self, other):
+		assert np.array_equal(self.shape, other.shape)
+		res = SparseTensor(self.shape, np.concatenate((self.indices, other.indices)), np.concatenate((self.values, other.values)))#, order = False)
+		res.order()
+		res.addUpRedundantEntries()
+		return res
+
+	def __sub__(self, other):
+		assert np.array_equal(self.shape, other.shape)
+		res = SparseTensor(self.shape, np.concatenate((self.indices, other.indices)), np.concatenate((self.values, -other.values)))#, order = False)
+		res.order()
+		res.addUpRedundantEntries()
+		return res
+
+	## checks whether things are of the right type, if indices are out of bounds, and so on
+	def consistencyCheck(self):
+		if not type(self.shape) == np.ndarray:
+			raise ValueError(f'self.shape is wrong type: {type(self.shape)} (expected numpy ndarray)')
+		if not type(self.indices) == np.ndarray:
+			raise ValueError(f'self.indices is wrong type: {type(self.indices)} (expected numpy ndarray)')
+		if not type(self.values) == np.ndarray:
+			raise ValueError(f'self.values is wrong type: {type(self.values)} (expected numpy ndarray)')
+		if not len(self.values.shape) == 1:
+			raise ValueError(f'self.values has wrong shape: {self.values.shape} (expected it to be an array with 1 index)')
+		if not self.indices.shape == (len(self.values), len(self.shape)):
+			raise ValueError(f'self.indices has wrong shape: {self.indices.shape} ' +
+				f'(expected self.indices.shape = (len(self.values), len(self.shape)) = {(len(self.values), len(self.shape))})')
+
+		## checking if any indices are out of bounds:
+		for i in range(len(self.shape)):
+			indices_out_of_bounds = self.indices[:,i] >= self.shape[i]
+			if any(indices_out_of_bounds):
+				j = list(indices_out_of_bounds).index(True)
+				raise ValueError(f'Index out of bounds. shape is {self.shape}.'
+					+ f' The following entry has index {i} out of bounds: index = {self.indices[j]} value = {self.values[j]}')
+
+		## checking if indices are sorted and if duplicates exist
+		indices_sorted = True
+		no_duplicate_indices = True
+
+		if len(self.values)>1:
+			indices_tuples_set = {tuple(self.indices[0])}
+			previous_index = self.indices[0]
+			for i in range(1,len(self.values)):
+				if tuple(self.indices[i]) in indices_tuples_set:
+					no_duplicate_indices = False
+				else:
+					indices_tuples_set.add(tuple(self.indices[i]))
+				if tuple(self.indices[i]) <= tuple(previous_index):
+					indices_sorted = False
+				previous_index = self.indices[i]
+
+		if not indices_sorted:
+			print('warning: indices not sorted')
+		
+		if not no_duplicate_indices:
+			raise RuntimeError('duplicate indices found')
+
+	def complexToReal(self,axes):
+		assert len(axes) == 2
+		(m,n) = self.shape[axes]
+		new_shape = self.shape
+		new_shape[axes[0]] = 2*self.shape[axes[0]]
+		new_shape[axes[1]] = 2*self.shape[axes[1]]
+
+		#upper left block
+		new_indices = self.indices
+		new_values = np.real(self.values)
+
+		#lower right block
+		offset = np.zeros(len(self.shape))
+		offset[axes[0]] = m
+		offset[axes[1]] = n
+		new_indices = np.vstack((new_indices,self.indices + offset))
+		new_values = np.concatenate((new_values, np.real(self.values)))
+
+		#lower left block
+		offset = np.zeros(len(self.shape))
+		offset[axes[0]] = m
+		new_indices = np.vstack((new_indices,self.indices + offset))
+		new_values = np.concatenate((new_values,np.imag(self.values)))
+
+		#upper right block
+		offset = np.zeros(len(self.shape))
+		offset[axes[1]] = n
+		new_indices = np.vstack((new_indices,self.indices + offset))
+		new_values = np.concatenate((new_values,-np.imag(self.values)))
+
+		return SparseTensor(new_shape, new_indices, new_values, order = True, dtype = float)
+
+	#ASSUMES INDICES ARE SORTED
+	def addUpRedundantEntries(self):
+		if len(self.indices) == 0:
+			return
+		out_indices = [self.indices[0]]
+		out_values = []
+		current_total = 0.
+		for i in range(len(self.values)):
+			if tuple(self.indices[i]) == tuple(out_indices[-1]):
+				current_total += self.values[i]
+			else:
+				out_values.append(current_total)
+				current_total = 0.
+				out_indices.append(self.indices[i])
+				current_total += self.values[i]
+		out_values.append(current_total)
+		assert len(out_indices) == len(out_values)
+		self.indices = np.array(out_indices)
+		self.values = np.array(out_values)
 
 	def isEqual(self,other):
 		return np.array_equal(self.shape, other.shape) and np.array_equal(self.indices, other.indices) and np.array_equal(self.values, other.values)
@@ -32,6 +161,12 @@ class SparseTensor:
 			nonzeros_indices_sorted = sorted(range(len(self.values)), key = lambda i: list(self.indices[i]))
 		self.indices = self.indices[nonzeros_indices_sorted]
 		self.values = self.values[nonzeros_indices_sorted]
+
+	def conjugate(self):
+		return SparseTensor(self.shape,self.indices, np.conjugate(self.values), order = False)
+
+	def copy(self):
+		return SparseTensor(self.shape, self.indices, self.values, order = False)
 
 	def removeZeros(self):
 		nonzeros = []
@@ -46,18 +181,22 @@ class SparseTensor:
 		return scipy.sparse.coo_array((self.values,(self.indices[:,0],self.indices[:,1])), shape = self.shape)
 
 	def toNumpy(self):
-		out = np.zeros(self.shape, dtype = complex)
+		out = np.zeros(self.shape, dtype = self.values.dtype)
 		for i in range(len(self.values)):
-			out[tuple(self.indices[i])] = self.values[i]
+			out[tuple(self.indices[i])] += self.values[i]
 		return out
 
 	def transpose(self, permutation):
 		assert len(permutation) == len(self.shape)
 		assert sorted(permutation) == list(range(len(self.shape)))
-		self.shape = self.shape[permutation]
-		self.indices = self.indices[:,permutation]
+
+		new_shape = self.shape[permutation]
+		new_indices = self.indices[:,permutation]
+
+		return SparseTensor(new_shape, new_indices, self.values, order = True)
 
 	#vectorizes given axes in Fortran order. The new axis is by default the leftmost one
+	#WARNING: result is not ordered if called with order = False
 	def vectorize(self, axes):
 		axes_complement = [i for i in range(len(self.shape)) if i not in axes]
 		prefactors = [1]
@@ -73,8 +212,82 @@ class SparseTensor:
 			shape_new = np.concatenate(([np.prod(self.shape[axes])], self.shape[axes_complement]))
 		else:
 			shape_new = np.prod(self.shape[axes]).reshape((1,))
-		self.shape = shape_new
-		self.indices = np.asarray(indices_new)
+
+		return SparseTensor(shape_new, indices_new, self.values)
+
+	#vectorizes a pair of axes, keeping only the lower triangular entries, ie, 
+	#those where vectorized indices are in (strictly, if strict = True) decreasing order
+	#mosek the the scale_off_diagonals keyword is for mosek's vectorization map
+	#WARNING: result is not ordered if called with order = False
+	def vectorizeLowerTriangular(self, axes, strict = True, order = True, scale_off_diagonals = None):
+		assert len(axes) == 2
+		assert self.shape[axes[0]] == self.shape[axes[1]]
+		n = self.shape[axes[0]]
+		axes_complement = [i for i in range(len(self.shape)) if i not in axes]
+
+		## define the mapping from unvectorized to vectorized indices
+		if strict:
+			second_index_constants = [0]
+			for i in range(n-2):
+				second_index_constants.append(second_index_constants[-1] + n-i-1)
+			def indexVectorization(index_in):
+				(i,j) = index_in[axes]
+				if i > j:
+					first_index_out = second_index_constants[j] + i-j-1
+				else:
+					first_index_out = -1
+				return np.concatenate(([first_index_out], index_in[axes_complement]))
+		else:
+			second_index_constants = [0]
+			for i in range(n-1):
+				second_index_constants.append(second_index_constants[-1] + n-i)
+			def indexVectorization(index_in):
+				(i,j) = index_in[axes]
+				if i >= j:
+					first_index_out = second_index_constants[j] + i-j
+				else:
+					first_index_out = -1
+				return np.concatenate(([first_index_out], index_in[axes_complement]))
+
+		## vectorize each index, removing those that are not in the lower triangular part
+		indices_new = []
+		values_new = []
+
+		if scale_off_diagonals is not None:
+			for i in range(len(self.values)):
+				index = self.indices[i]
+				new_index = indexVectorization(index)
+				if new_index[0] >= 0:
+					if index[0]>index[1]:
+						indices_new.append(new_index)
+						values_new.append(self.values[i]*scale_off_diagonals)
+					else:
+						indices_new.append(new_index)
+						values_new.append(self.values[i])
+		else:
+			for i in range(len(self.values)):
+				index = self.indices[i]
+				new_index = indexVectorization(index)
+				if new_index[0] >= 0:
+					indices_new.append(new_index)
+					values_new.append(self.values[i])
+
+		## set the new shape
+		if strict:
+			vec_axis_shape = n*(n-1)//2
+		else:
+			vec_axis_shape = n*(n+1)//2
+
+		if len(axes_complement) > 0:
+			shape_new = np.concatenate(([vec_axis_shape], self.shape[axes_complement]))
+		else:
+			shape_new = np.array([vec_axis_shape])
+
+		if len(self.shape) == 1:
+			self.indices = np.reshape(indices_new, (len(indices_new),1))
+
+		return SparseTensor(shape_new, indices_new, values_new, order = True)
+		
 
 	#devectorizes axis given by vector_axis. Expanded axes become the leftmost ones
 	def devectorize(self, vector_axis, new_axes_shape):
@@ -97,7 +310,7 @@ class SparseTensor:
 		for i in range(len(self.indices)):
 			indices_new[i] = indexDevectorization(self.indices[i])
 		
-		self.indices = indices_new
+		return SparseTensor(self.shape, indices_new, self.values, order = True)
 
 	#Contracts with a dense vector v along the last axis. For instance if A is order 3, returns sum_k A_ijk v_k
 	#If skip_ordering = True, assumes that indices are lexicographically (ie. big-endian) ordered
@@ -164,6 +377,46 @@ class SparseTensor:
 		
 		return out
 
+### matrix operations
+
+#same as the same-named function in SparseTensor but for dense matrices
+def vectorizeLowerTriangular(a, strict = True, scale_off_diagonals = None, printing = False):
+	assert len(a.shape) == 2
+	assert a.shape[0] == a.shape[1]
+	n = a.shape[0]
+
+	if scale_off_diagonals is not None:
+		diagonal = np.diag(a)
+		off_diagonal = a - np.diag(diagonal)
+		b = scale_off_diagonals*off_diagonal + np.diag(diagonal)
+	else:
+		b=a
+
+	if strict:
+		k = 1
+	else:
+		k = 0
+
+	return b.T[np.triu_indices(n, k = k)]
+
+def complexToReal(M):
+	assert len(M.shape) == 2
+	reM = np.real(M)
+	imM = np.imag(M)
+	return np.block([[reM, -imM],[imM, reM]])
+
+def realToComplex(M, sanity_check = False):
+	assert len(M.shape) == 2
+	(m,n) = M.shape
+	assert m%2 == 0
+	assert n%2 == 0
+
+	if sanity_check:
+		assert np.array_equal(M[:m//2,:n//2], M[m//2:, n//2:]) #real part
+		assert np.array_equal(M[m//2:,:n//2], -M[:m//2, :n//2]) #imag part
+
+	return M[:m//2,:n//2] + 1j*M[m//2:,:n//2]
+
 #dict containing the pauli and phase resulting from multiplying two paulis
 single_pauli_mult_matrix = {}
 
@@ -227,8 +480,8 @@ def invertStringList(l):
 
 #returns compressed representation of a pauli.
 #first number is the Hamming weight
-#then, for single-site pauli factor, we have the letter X,Y,or Z and the index of the corresponding site.
-#For instance IIYIIX is converted to 2 Y 2 X 5
+#then, for a single-site pauli factor, we have the letter X,Y,or Z and the index of the corresponding site.
+#For instance IYIIIXI is 2 Y 1 X 5 and IIIIZZZ is 3 Z 4 Z 5 Z 6
 def compressPauli(pauli):
 	n = len(pauli)
 	supp = determineSupport(pauli)
@@ -576,8 +829,8 @@ def buildTripleProductTensorFast(onebody_operators, hamiltonian_terms, threebody
 	last_index = pauli_char_table[multiplied_paulis].view(dtype = '<U'+str(n))
 	last_index = np.vectorize(threebody_operators_indices.__getitem__)(last_index) ### this is the current bottleneck
 	t2 = time.time()
-	if printing:
-		tprint(f'reversing l index list took {t2-t1:.2f} seconds')
+	#if printing:
+	#	tprint(f'reversing l index list took {t2-t1:.2f} seconds')
 
 	shape = np.asarray([r,h,r,len(threebody_operators)])
 	#print(f'combined_indices.shape = {combined_indices.shape}')
@@ -585,7 +838,12 @@ def buildTripleProductTensorFast(onebody_operators, hamiltonian_terms, threebody
 	#print(f'total_phases.shape = {total_phases.shape}')
 	indices = np.hstack((combined_indices, last_index))
 
-	out = SparseTensor(shape,indices,total_phases)## this should be sorted
+
+
+	out = SparseTensor(shape,indices,total_phases)## if everything is working correctly, this tensor should be sorted
+
+	if printing:
+		tprint(f'triple_product_tensor has {len(out.values)} nonzero entries')
 
 	return out
 
@@ -651,6 +909,49 @@ def buildTripleProductTensor(onebody_operators, hamiltonian_terms, printing = Fa
 def tprint(s):
 	current_time_string = time.strftime("%H:%M:%S", time.localtime())
 	print(f'{current_time_string}: {s}')
+
+def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = 'linear', yscale = 'linear', print_lowest = None, print_highest = None):
+	cmap = colormaps['viridis']
+
+	if names is not None:
+		assert len(matrices) == len(names)
+	else:
+		names = [None]*len(matrices)
+
+	for i in range(len(matrices)):
+		if hermitean:
+			eigs = scipy.linalg.eigvalsh(matrices[i])
+			plt.scatter(np.arange(len(eigs)), eigs, s=2, label = names[i])
+		else:
+			eigs =  scipy.linalg.eigvals(matrices[i])
+			plt.scatter(np.arange(len(eigs)), np.real(eigs), s=2, label = names[i] + 'real', c =cmap(i/len(matrices)) )
+			plt.scatter(np.arange(len(eigs)), np.imag(eigs), marker = "^", s=2, label = names[i] + 'imaginary',c =cmap(i/len(matrices)))
+
+		if print_lowest is not None:
+			print_lowest = min(print_lowest, len(eigs))
+			tprint(f'{print_lowest} lowest eigenvalues of {names[i]}:')
+			for i in range(print_lowest):
+				tprint(eigs[i])
+			print()
+
+		if print_highest is not None:
+			print_highest = min(print_highest, len(eigs))
+			tprint(f'{print_highest} highest eigenvalues of {names[i]}:')
+			for i in range(print_highest):
+				tprint(eigs[len(eigs)-i-1])
+			print()
+
+	if title is None:
+		if len(matrices) == 1:
+			title = f'{names[0]} spectrum'
+		else:
+			title = f'{names} spectra'
+
+	plt.title(title)
+	plt.yscale(yscale)
+	plt.xscale(xscale)
+	plt.legend()
+	plt.show()
 
 ##### LOADING AND SAVING
 
