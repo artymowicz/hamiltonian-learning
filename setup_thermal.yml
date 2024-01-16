@@ -1,5 +1,5 @@
 ## params of physical system
-hamiltonian_filename: xxz
+hamiltonian_filename: tf_ising_Ferro
 n: 10
 coupling_constants:
   g: -1.5
@@ -36,9 +36,10 @@ solver: MOSEK
 objective: mu
 mu: 1.e-6
 C_eigval_threshold: 1.e-8
+W_eigval_threshold: 1.e-5
 T_constraint: T>0
 
 ## miscellaneous parameters
-skip_plotting: True
+skip_plotting: False
 printing: True
 no_save: True #skip creating a run directory and saving results there

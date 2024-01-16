@@ -2,29 +2,120 @@ from simulation import Hamiltonian, Simulator
 import hamiltonian_learning
 import utils
 
-
+import os
+import pickle
 import sys
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
 import yaml
 import argparse
+from matplotlib import colormaps
 
-def sensitivityAnalysis(args):
-	raise NotImplementedError
-	onebody_operators = args['onebody_operators']
-	twobody_operators = args['twobody_operators']
-	threebody_operators = args['threebody_operators']
-	expectations_dict = args['expectations_dict']
-	mult_tensor = args['mult_tensor']
-	triple_product_tensor = args['triple_product_tensor']
-	dual_vector = args['dual_vector']
-	E = args['E']
+
+def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = 'linear', yscale = 'linear'):
+
+	cmap = colormaps['viridis']
+
+	if names is not None:
+		assert len(matrices) == len(names)
+	else:
+		names = [None]*len(matrices)
+
+	for i in range(len(matrices)):
+		if hermitean:
+			eigs = scipy.linalg.eigvalsh(matrices[i])
+			plt.scatter(np.arange(len(eigs)), eigs, s=2, label = names[i])
+		else:
+			eigs =  scipy.linalg.eigvals(matrices[i])
+			plt.scatter(np.arange(len(eigs)), np.real(eigs), s=2, label = names[i] + 'real', c =cmap(i/len(matrices)) )
+			plt.scatter(np.arange(len(eigs)), np.imag(eigs), marker = "^", s=2, label = names[i] + 'imaginary',c =cmap(i/len(matrices)))
+
+	plt.title(title)
+	plt.yscale(yscale)
+	plt.xscale(xscale)
+	plt.legend()
+	plt.show()
+
+def dag(A):
+	return np.conjugate(A.T)
+
+def eigvecs(A):
+	return scipy.linalg.eigh(A)[1]
+
+def analysis(params, data):
+	onebody_operators = data['onebody_operators']
+	twobody_operators = data['twobody_operators']
+	hamiltonian_terms = data['hamiltonian_terms']
+	threebody_operators = data['threebody_operators']
+	expectations_dict = data['expectations_dict']
+	mult_tensor = data['mult_tensor']
+	triple_product_tensor = data['triple_product_tensor']
+	dual_vector = data['dual_vector']
+	hamiltonian_learned_coefficients = data['hamiltonian_learned_coefficients']
+	H_in = data['H_in']
+	T_in_normalized = data['T_in_normalized']
+	T_learned = data['T_learned']
+	F = data['F']
+
+	E = data['E'] # = C^-1/2
+	C = data['C']
+	n = params['n']
+	R = len(onebody_operators)
+	r = E.shape[0]
+
+	Delta = np.conjugate(E.T)@C.T@E
+	logDelta = scipy.linalg.logm(Delta)
+	#utils.plotSpec(Delta, title = 'Delta spectrum')#, yscale = 'log')
+
+	F_vectorized = F.vectorize([0,1]).toScipySparse()
+	print(f'T_learned = {T_learned}')
+	print(f"T_theor = {T_in_normalized}")
+
+	hamiltonian_theoretical_coefficients = np.zeros(len(hamiltonian_terms))
+	for i in range(len(H_in.terms)):
+		j = hamiltonian_terms.index(H_in.terms[i])
+		hamiltonian_theoretical_coefficients[j] = H_in.coefficients[i]
+
+	free_energy_learned = T_learned*logDelta + np.conjugate(E.T)@np.reshape(F_vectorized@hamiltonian_learned_coefficients, (r,r), order = 'F')@E
+	free_energy_theoretical = T_in_normalized*logDelta + np.conjugate(E.T)@np.reshape(F_vectorized@hamiltonian_theoretical_coefficients, (r,r), order = 'F')@E
+
+	#utils.plotSpec(dual_vector, title = 'dual vector spectrum', yscale = 'log')
+	utils.plotSpec(free_energy_learned, free_energy_theoretical, names = ['learned', 'theoretical'] , title = 'free energy spectra' )
+	#utils.plotSpec(free_energy_theoretical, names = ['theoretical'] , title = 'free energy spectra' )
+
+	'''
+	assert n > 1
+	p = 'XX' + 'I'*(n-2)
+	i = twobody_operators.index(p)
+	v = np.zeros(len(twobody_operators))
+	v[i] = 1
+	C_prime = mult_tensor.contractRight(v).toNumpy()
+
+	#wont work when cutoff > 0
+	#Delta_prime = np.conjugate(derivInvSqrt(C,C_prime).T)@C.T@E + np.conjugate(E.T)@C_prime.T@E + np.conjugate(E.T)@C_prime.T@derivInvSqrt(C,C_prime)
+
+	Delta_eigvals = scipy.linalg.eigvalsh(Delta)
+	thresh = 1e-10
+	nonzero_indices = np.array([i for i in range(r) if np.abs(Delta_eigvals[i] - 1) > thresh])
+	zero_indices = np.array([i for i in range(r) if i not in (nonzero_indices)])
+	P = eigvecs(C)[:,nonzero_indices] ## projection onto nonzero eigenspace of Delta
+	P_perp = eigvecs(C)[:,zero_indices] ## projection onto zero eigenspace of Delta
+	A = dag(P)@Delta_prime@P
+	B = dag(P_perp)@Delta_prime@P_perp
+	utils.plotSpec(A, title = f'A spectrum for {p}')
+	utils.plotSpec(B, title = f'B spectrum for {p}')
+	'''
+
+	#Delta_prime = np.conjugate(derivInvSqrt(C,C_prime).T)@C.T@E + np.conjugate(E.T)@C_prime.T@E + np.conjugate(E.T)@C_prime.T@derivInvSqrt(C,C_prime)
+	#logDelta_prime = derivLog(Delta,Delta_prime)
+
+	#utils.plotSpec(logDelta_prime, title = 'logDeltaPrime spectrum')
+
+	#print(f'lam dot logDelta_prime = {np.trace(dag(dual_vector)@logDelta_prime)}')
 
 	#Delta = np.conjugate(E.T)@C.T@E
 	#logDelta = scipy.linalg.logm(Delta)
-
-	### unfinished..
 
 def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectations_dict, params, metrics):
 	if params['no_save']:
@@ -142,32 +233,7 @@ def loadAndNameHamiltonian(params):
 	H_name = f'{n}_{hamiltonian_filename}_{params_string}'
 	return H, H_name
 
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	parser.add_argument('setup_filename')
-	parser.add_argument('-g', type = float)
-	parser.add_argument('-b', '--beta', type = float)
-	parser.add_argument('-dt', '--simulator_dt', type = float)
-	parser.add_argument('-o', '--objective')
-	parser.add_argument('-n', type = int)
-	args = parser.parse_args()
-
-	##load params dictionary
-	with open(args.setup_filename) as f:
-		params = yaml.safe_load(f)
-
-	## some parameters can be provided in the commandline, they will then override the ones in the setup file
-	if args.g is not None:
-		params['coupling_constants']['g'] = args.g
-	if args.beta is not None:
-		params['beta'] = args.beta
-	if args.simulator_dt is not None:
-		params['simulator_dt'] = args.simulator_dt
-	if args.objective is not None:
-		params['objective'] = args.objective
-	if args.n is not None:
-		params['n'] = args.n
-
+def main(params):
 	utils.tprint(f'running modular_tester.py with params:')
 	print(yaml.dump(params))
 
@@ -188,6 +254,7 @@ if __name__ == '__main__':
 
 	#threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
 	threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
+	threebody_expectations += params['noise']*np.random.normal(size = len(threebody_operators))
 
 	'''
 	if state.n<10:
@@ -199,16 +266,92 @@ if __name__ == '__main__':
 	'''
 	threebody_expectations_dict = dict(zip(threebody_operators,threebody_expectations))
 	evaluator = lambda x : threebody_expectations_dict[x]
+
 	### run convex optimization
 	args = (params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
 	kwargs = dict(return_extras = True)
-	hamiltonian_learned_coefficients, T_learned, extras= hamiltonian_learning.learnHamiltonianFromThermalState(*args, **kwargs)
-	hamiltonian_learned_coefficients = hamiltonian_learned_coefficients
+	hamiltonian_learned_coefficients, T_learned, run_data = hamiltonian_learning.learnHamiltonianFromThermalState(*args, **kwargs)
 
 	H_learned = Hamiltonian(params['n'], hamiltonian_terms, hamiltonian_learned_coefficients)
 	H_in_normalization = H.normalizeCoeffs(threebody_expectations_dict)
 
-	### save results
-	saveLearningResults(H, H_name, 1/params['beta']/H_in_normalization, H_learned, T_learned, threebody_expectations_dict, params, state.metrics)
+	run_data['H_in'] = H
+	run_data['T_in_normalized'] = 1/params['beta']/H_in_normalization
+	run_data['onebody_operators'] = onebody_operators
+	run_data['hamiltonian_terms'] = hamiltonian_terms
+	run_data['expectations_dict'] = threebody_expectations_dict
+	run_data['T_learned'] = T_learned
+	run_data['hamiltonian_learned_coefficients'] = hamiltonian_learned_coefficients
 
+	### save results
+	saveLearningResults(H, H_name, run_data['T_in_normalized'], H_learned, T_learned, threebody_expectations_dict, params, state.metrics)
+
+	return run_data
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('setup_filename')
+	parser.add_argument('-g', type = float)
+	parser.add_argument('-b', '--beta', type = float)
+	parser.add_argument('-dt', '--simulator_dt', type = float)
+	parser.add_argument('-mu', type = float)
+	parser.add_argument('--noise', type = float)
+	parser.add_argument('-o', '--objective')
+	parser.add_argument('-n', type = int)
+	parser.add_argument('-wt','--w_thresh', type = float) #W_eigval_threshold
+	parser.add_argument('-ct','--c_thresh', type = float) #C_eigval_threshold
+
+	args = parser.parse_args()
+
+	##load params dictionary
+	with open(args.setup_filename) as f:
+		params = yaml.safe_load(f)
+
+	## some parameters can be provided in the commandline, they will then override the ones in the setup file
+	if args.g is not None:
+		params['coupling_constants']['g'] = args.g
+	if args.beta is not None:
+		params['beta'] = args.beta
+	if args.simulator_dt is not None:
+		params['simulator_dt'] = args.simulator_dt
+	if args.objective is not None:
+		params['objective'] = args.objective
+	if args.n is not None:
+		params['n'] = args.n
+	if args.mu is not None:
+		params['mu'] = args.mu
+	if args.noise is not None:
+		params['noise'] = args.noise
+	if args.w_thresh is not None:
+		params['W_eigval_threshold'] = args.w_thresh
+	if args.c_thresh is not None:
+		params['C_eigval_threshold'] = args.c_thresh
+
+	use_cached = False #caching of previous run. Not intended for use on cluster
+	if use_cached:
+		loaded_successfully = False
+		if os.path.exists('./caches/lastrun/params.yml'):
+			with open('./caches/lastrun/params.yml', 'r') as f:
+				params_cached = yaml.safe_load(f)
+			if set(params_cached.keys()) & set(params.keys()) and all([params_cached[key] == params[key] for key in params.keys()]):
+				try:
+					with open('./caches/lastrun/data.pkl', 'rb') as f:
+						data = pickle.load(f)
+					loaded_successfully = True
+				except Exception as e:
+					print('encountered error trying to load last run: ')
+					print(f'    {e}')
+
+		if not loaded_successfully:
+			data = main(params)
+			if not os.path.exists('./caches/lastrun/'):
+				os.mkdir('./caches/lastrun/')
+			with open('./caches/lastrun/params.yml', 'w') as f:
+				yaml.dump(params, f)
+			with open('./caches/lastrun/data.pkl', 'wb') as f:
+				pickle.dump(data, f)
+	else:
+		main(params)
+
+	#analysis(params, data)
 
