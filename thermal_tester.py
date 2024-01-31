@@ -81,8 +81,23 @@ def analysis(params, data):
 	free_energy_theoretical = T_in_normalized*logDelta + np.conjugate(E.T)@np.reshape(F_vectorized@hamiltonian_theoretical_coefficients, (r,r), order = 'F')@E
 
 	#utils.plotSpec(dual_vector, title = 'dual vector spectrum', yscale = 'log')
-	utils.plotSpec(free_energy_learned, free_energy_theoretical, names = ['learned', 'theoretical'] , title = 'free energy spectra' )
-	#utils.plotSpec(free_energy_theoretical, names = ['theoretical'] , title = 'free energy spectra' )
+	#utils.plotSpec(free_energy_learned, free_energy_theoretical, names = ['learned', 'theoretical'] , title = 'free energy spectra' )
+
+	utils.tprint('plotting')
+	if not params_dict['skip_plotting']:
+		utils.plotSpec(Delta, C,W, names = ['Delta', 'C','W'], yscale = 'log', print_lowest = 10)
+
+	utils.plotSpec(free_energy_theoretical, names = ['theoretical'] , title = 'free energy spectra')
+
+	'''
+	utils.plotSpec(Delta)
+	Delta_eigvals, Delta_eigvecs = scipy.linalg.eigh(Delta)
+	v0 = E@Delta_eigvecs[:,0]
+	v1 = E@Delta_eigvecs[:,1]
+	print(Delta_eigvals[:10])
+	for i in range(len(onebody_operators)):
+		print(f'{onebody_operators[i]}  {v0[i]}  {v1[i]}')
+	'''
 
 	'''
 	assert n > 1
@@ -158,8 +173,17 @@ def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectation
 		if p in in_coeffs_dict:
 			in_coeffs[i] = in_coeffs_dict[p]
 
+	def angle(x,y):
+		n_x = np.linalg.norm(x)
+		n_y = np.linalg.norm(y)
+		overlap = np.abs(np.vdot(x,y))
+		return np.arccos(overlap/(n_x*n_y))
+
+	theta = angle(in_coeffs, learned_coeffs)
+
 	utils.tprint(f'original T = {T_in:.10e}   learned T = {T_learned:.10e}')
 	utils.tprint(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}')
+	utils.tprint(f'reconstruction error (theta) is {theta}')
 	if params['printing']:
 		if params['objective'] == 'l2':
 			utils.tprint(f"l2 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 2)}")
@@ -181,7 +205,9 @@ def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectation
 	with open(save_dir + f'/groundstate_learning_results.txt', 'w') as f:
 		f.write(f'results of hamiltonian_learning_from_groundstate_tester.py\n\n')
 		f.write(f'original T = {T_in:.10e}   learned T = {T_learned:.10e}\n\n')
-		f.write(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}\n\n')
+		f.write(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}\n')
+		f.write(f'reconstruction error (theta) is {theta}\n\n')
+
 		if params['objective'] == 'l2':
 			f.write(f"l2 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 2)}\n")
 			f.write(f"l2 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 2)}\n")
@@ -233,6 +259,18 @@ def loadAndNameHamiltonian(params):
 	H_name = f'{n}_{hamiltonian_filename}_{params_string}'
 	return H, H_name
 
+def simulateShadowTomographyNoise(operators, expectations, n_measurements):
+	assert len(operators) == len(expectations)
+	variances = np.zeros(len(operators))
+	for i in range(len(operators)):
+		weight = utils.weight(operators[i])
+		if weight == 0:
+			variances[i]=0
+		else:
+			variances[i] = (3**weight)*(1-expectations[i]**2)/n_measurements
+	noise = np.sqrt(variances)*np.random.normal(size=len(operators))
+	return noise
+
 def main(params):
 	utils.tprint(f'running modular_tester.py with params:')
 	print(yaml.dump(params))
@@ -254,8 +292,15 @@ def main(params):
 
 	#threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
 	threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
-	threebody_expectations += params['noise']*np.random.normal(size = len(threebody_operators))
-
+	#threebody_expectations += params['noise']*np.random.normal(size = len(threebody_operators))
+	if params['add_noise']:
+		if params['ST_measurements'] is not None:
+			noise = simulateShadowTomographyNoise(threebody_operators, threebody_expectations, params['ST_measurements'])
+			#for i in range(len(threebody_operators)):
+			#	print(f'{threebody_operators[i]} {threebody_expectations[i]} {noise[i]}')
+			threebody_expectations += noise
+		if params['uniform_noise']:
+			threebody_expectations += params['uniform_noise']*np.random.normal(size=len(threebody_expectations))
 	'''
 	if state.n<10:
 		params['simulator_method'] = 'ED'
@@ -268,6 +313,8 @@ def main(params):
 	evaluator = lambda x : threebody_expectations_dict[x]
 
 	### run convex optimization
+	assert onebody_operators[0] == 'I'*params['n']
+	onebody_operators = onebody_operators[1:]
 	args = (params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
 	kwargs = dict(return_extras = True)
 	hamiltonian_learned_coefficients, T_learned, run_data = hamiltonian_learning.learnHamiltonianFromThermalState(*args, **kwargs)
@@ -295,7 +342,7 @@ if __name__ == '__main__':
 	parser.add_argument('-b', '--beta', type = float)
 	parser.add_argument('-dt', '--simulator_dt', type = float)
 	parser.add_argument('-mu', type = float)
-	parser.add_argument('--noise', type = float)
+	parser.add_argument('--unoise', type = float) #uniform noise
 	parser.add_argument('-o', '--objective')
 	parser.add_argument('-n', type = int)
 	parser.add_argument('-wt','--w_thresh', type = float) #W_eigval_threshold
@@ -320,12 +367,12 @@ if __name__ == '__main__':
 		params['n'] = args.n
 	if args.mu is not None:
 		params['mu'] = args.mu
-	if args.noise is not None:
-		params['noise'] = args.noise
 	if args.w_thresh is not None:
 		params['W_eigval_threshold'] = args.w_thresh
 	if args.c_thresh is not None:
 		params['C_eigval_threshold'] = args.c_thresh
+	if args.unoise is not None:
+		params['uniform_noise'] = args.unoise
 
 	use_cached = False #caching of previous run. Not intended for use on cluster
 	if use_cached:
@@ -351,7 +398,7 @@ if __name__ == '__main__':
 			with open('./caches/lastrun/data.pkl', 'wb') as f:
 				pickle.dump(data, f)
 	else:
-		main(params)
+		data = main(params)
 
 	#analysis(params, data)
 

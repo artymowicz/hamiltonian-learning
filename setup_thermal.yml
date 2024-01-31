@@ -1,8 +1,8 @@
 ## params of physical system
-hamiltonian_filename: tf_ising_Ferro
+hamiltonian_filename: xxz
 n: 10
 coupling_constants:
-  g: -1.5
+  g: 1.0
 beta: 1. #inverse temp
 
 ## operators involved in the convex optimization
@@ -15,7 +15,7 @@ H_locality: long_range
 H_range: 0 #if None, range is unlimited
 
 ## parameters for computing equilibrium state
-simulator_method: ED
+simulator_method: tenpy
 simulator_dt: 1.e-3
 simulator_order: 2
 simulator_approx: II
@@ -29,14 +29,16 @@ no_cache: False #skip loading and saving cached expectations
 overwrite_cache: False #overwrite existing cache of expectation values if it exists
 skip_checks: False
 naive_compute: False
-noise: 0
+add_noise: True
+uniform_noise: 1.e-3
+ST_measurements: null #1.e+7
 
 ## parameters for convex optimization
 solver: MOSEK
 objective: mu
 mu: 1.e-6
 C_eigval_threshold: 1.e-8
-W_eigval_threshold: 1.e-5
+W_eigval_threshold: 0.1
 T_constraint: T>0
 
 ## miscellaneous parameters
