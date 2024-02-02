@@ -347,6 +347,7 @@ if __name__ == '__main__':
 	parser.add_argument('-n', type = int)
 	parser.add_argument('-wt','--w_thresh', type = float) #W_eigval_threshold
 	parser.add_argument('-ct','--c_thresh', type = float) #C_eigval_threshold
+	parser.add_argument('--st_meas', type = int)
 
 	args = parser.parse_args()
 
@@ -373,6 +374,8 @@ if __name__ == '__main__':
 		params['C_eigval_threshold'] = args.c_thresh
 	if args.unoise is not None:
 		params['uniform_noise'] = args.unoise
+	if args.unoise is not None:
+		params['ST_measurements'] = args.st_meas
 
 	use_cached = False #caching of previous run. Not intended for use on cluster
 	if use_cached:
