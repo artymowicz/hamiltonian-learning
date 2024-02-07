@@ -360,6 +360,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	elif Delta_eigs[0] < small:
 		utils.tprint('WARNING: Modular operator is near singular')
 	logDelta = scipy.linalg.logm(Delta)
+	#TODO: just project onto Ker(Delta)^perp. In fact this should be automatic anyway
 	#utils.plotSpec(logDelta, names = ['logDelta'], print_lowest = 10)
 
 	### building W and S matrices
@@ -375,16 +376,17 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	W = (Z_vec_scipy.T.conj()@Z_vec_scipy)
 	utils.tprint('converting W to dense array')
 	W = W.toarray()
-	utils.tprint('plotting')
-	if not params_dict['skip_plotting']:
-		utils.plotSpec(Delta, C,W, names = ['Delta', 'C','W'], yscale = 'log', print_lowest = 10)
 
 	## computing S, whose columns form an orthonormal basis of the (approximate) null space of W
 	W_eigvals, W_eigvecs = scipy.linalg.eigh(W)
 	W_eigval_threshold = params_dict['W_eigval_threshold']
 	q = list((W_eigvals > W_eigval_threshold)).index(True)
+	if params_dict['printing']:
+		utils.tprint('lowest 10 eigenvalues of W:')
+		for i in range(10):
+			utils.tprint(f' {W_eigvals[i]:.4e}')
 	if q < 2 :
-		raise ValueError('all W eigenvalues are above the cutoff (except the trivial one coming from the identity)')
+		raise ValueError(f'all W eigenvalues are above the cutoff {W_eigval_threshold}(except the trivial one coming from the identity)')
 	utils.tprint(f'W cutoff = {q}')
 	S = W_eigvecs[:,:q] 
 
@@ -422,6 +424,11 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 
 	elif params_dict['T_constraint'] == 'T=1':
 		constraints = [T==1, X[0] == 0]
+		h,_ = S.shape
+		u = np.zeros(h)
+		u[0] = 1
+		v = S.T@u
+		constraints += [v@X == 0]
 	else:
 		raise ValueError(f"T_constraint {params_dict['T_constraint']} not recognized. Valid inputs are 'T=1' or 'T>0'.")
 
@@ -445,7 +452,7 @@ def learnHamiltonianFromThermalState(n, onebody_operators, hamiltonian_terms, ex
 	utils.tprint(f'solver exited with status {prob.status}')
 	X_learned, T_learned, mu_learned = S@X.value, T.value, mu.value
 
-	print(f'mu_learned = {mu_learned}')
+	utils.tprint(f'mu_learned = {mu_learned}')
 	### computing negativity
 	if T.value is not None and params_dict['printing']:
 		A = T.value*logDelta + np.conjugate(E.T)@np.reshape(FS@X.value, (R,R), order = 'F')@E
