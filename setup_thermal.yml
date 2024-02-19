@@ -1,47 +1,49 @@
-## params of physical system
+## parameters of physical system
 hamiltonian_filename: xxz
 n: 10
+periodic: False
 coupling_constants:
   g: 1.0
 beta: 1. #inverse temp
 
-## operators involved in the convex optimization
+## parameters determining the choice of onebody operators (called the "pertubing operators" b_i in the paper)
 k: 2
-onebody_locality: short_range
-onebody_range: 2
-periodic: False #boundary conditions
-k_H: 1
-H_locality: long_range
-H_range: 0 #if None, range is unlimited
+onebody_locality: short_range #when this is "short_range", the onebody operators are all the geometrically k-local Paulis
+onebody_range: 2 #when onebody_locality = "long_range", onebody operators are all products of two geometrically k-local Paulis localized at most "onebody_range" apart
+
+## parameters determining the choice of hamiltonian terms (called the "variational hamiltonian terms" h_alpha in the paper)
+k_H: 2
+H_locality: short_range #when this is "short_range", the hamiltonian terms are all the geometrically k_H-local Paulis
+H_range: 0 #when H_locality = "long_range", hamiltonian terms are all products of two geometrically k_H-local Paulis localized at most "H_range" apart
 
 ## parameters for computing equilibrium state
-simulator_method: tenpy
-simulator_dt: 1.e-3
-simulator_order: 2
-simulator_approx: II
-MPS_no_cache: False
-MPS_overwrite_cache: False
+simulator_method: tenpy #
+simulator_dt: 1.e-3     # these are parameters used in computing the Gibbs state via MPS methods. Based on https://tenpy.readthedocs.io/en/latest/examples/purification.html
+simulator_order: 2      #
+simulator_approx: II    #
+
+MPS_no_cache: False #skip loading and saving cached Gibbs state (as a purified MPS)
+MPS_overwrite_cache: False #overwrite existing MPS cache if it exists
 MPS_avoid_overwrite: True #avoid overwriting a cached MPS if it was computed using a smaller dt
 
 ## parameters for computing expectations #TODO: rename these, prepending "expectations_"
 n_threads: 4
-no_cache: False #skip loading and saving cached expectations
+no_cache: False #skip loading and saving cached expectation values of gibbs states used for testing
 overwrite_cache: False #overwrite existing cache of expectation values if it exists
-skip_checks: False
-naive_compute: False
-add_noise: True
-uniform_noise: 1.e-3
-ST_measurements: null #1.e+7
+skip_checks: False #skips doing sanity checks on cache for a slight speedup
+naive_compute: False #used for testing MPS
+add_noise: False #adding simulated measurement noise
+uniform_noise: 1.e-5 #uniform noise amplitude (sigma_noise in the paper)
+ST_measurements: null #number of simulated shadow tomography measurements (m in the paper)
 
 ## parameters for convex optimization
 solver: MOSEK
 objective: mu
-mu: 1.e-6
-C_eigval_threshold: 1.e-8
-W_eigval_threshold: 0.1
+C_eigval_threshold: 0 #eigenvalue threshold for C matrix (important when omega is not faithful or nearly not faithful)
+W_eigval_threshold: 1.e-4 #eigenvalue threshold for W matrix
 T_constraint: T>0
 
 ## miscellaneous parameters
 skip_plotting: False
 printing: True
-no_save: True #skip creating a run directory and saving results there
+no_save: False #skip creating a run directory and saving results there
