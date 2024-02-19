@@ -1,10 +1,10 @@
 # hamiltonian-learning
 
-How to use:
+**How to use:**
 1. Modify setup_thermal.yml to the desired parameters
 2. run "python thermal_tester.py setup_thermal.yml" (for convenience, some parameters can be passed from the command line without modifying setup_thermal.py. See thermal_tester.py for details)
 
-Here is a description of what is in the repo:
+**Here is a description of what is in the repo:**
 
 ./hamiltonians contains some classes of hamiltonians
 
