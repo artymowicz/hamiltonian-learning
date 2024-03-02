@@ -838,8 +838,6 @@ def buildTripleProductTensorFast(onebody_operators, hamiltonian_terms, threebody
 	#print(f'total_phases.shape = {total_phases.shape}')
 	indices = np.hstack((combined_indices, last_index))
 
-
-
 	out = SparseTensor(shape,indices,total_phases)## if everything is working correctly, this tensor should be sorted
 
 	if printing:

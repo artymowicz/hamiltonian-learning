@@ -1,3 +1,12 @@
+# This yml contains a description of a class of Hamiltonians.
+# Any numerical parameters in the Hamiltonian (such as magnetic field for an Ising model) are listed in the "params" field.
+# The dict term_coefficient_pairs contains each Pauli term of the Hamiltonian (written in compressed format) and its coefficient (which is in general a constant times a parameter).
+# Compressed format for Paulis is a space-separated list of entries. First entry is the Hamming weight of the Pauli operator. 
+#     Subsequent entries are the pauli name (character 'X', 'Y' or 'Z') and the index (integer)
+#     For instance, the Pauli operator X\otimes I \otimes Y \otimes I (where I is the identity) would be written 2 X 0 Y 2
+# If translation_invariant = True, all translates of each term will be added to the Hamiltonian, 
+#     with periodic or open boundary conditions according to whether periodic = True or False.
+
 translation_invariant: True
 periodic: False
 params:
