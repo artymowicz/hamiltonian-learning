@@ -177,20 +177,17 @@ def saveLearningResults(H_in, H_in_name, T_in, H_learned, T_learned, expectation
 		n_x = np.linalg.norm(x)
 		n_y = np.linalg.norm(y)
 		overlap = np.abs(np.vdot(x,y))
-		return np.arccos(overlap/(n_x*n_y))
+		return np.arccos(min(overlap/(n_x*n_y),1.))
 
 	theta = angle(in_coeffs, learned_coeffs)
 
 	utils.tprint(f'original T = {T_in:.10e}   learned T = {T_learned:.10e}')
-	utils.tprint(f'average squared reconstruction error is {np.square(np.linalg.norm(in_coeffs - learned_coeffs))/l}')
 	utils.tprint(f'reconstruction error (theta) is {theta}')
 	if params['printing']:
 		if params['objective'] == 'l2':
 			utils.tprint(f"l2 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 2)}")
 			utils.tprint(f"l2 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 2)}")
-		else:
-			utils.tprint(f"l1 norm of original Hamiltonian: {np.linalg.norm(in_coeffs[1:], ord = 1)}")
-			utils.tprint(f"l1 norm of learned Hamiltonian: {np.linalg.norm(learned_coeffs[1:], ord = 1)}")
+
 		print()
 		line = 'term' + ' '*(4*r-1) +':  orig coeff :  learned coeff'
 		print(line)
@@ -294,6 +291,7 @@ def main(params):
 	threebody_expectations = np.flip(state.getExpectations(np.flip(threebody_operators), params))
 	#threebody_expectations += params['noise']*np.random.normal(size = len(threebody_operators))
 	if params['add_noise']:
+		utils.tprint('adding noise')
 		if params['ST_measurements'] is not None:
 			noise = simulateShadowTomographyNoise(threebody_operators, threebody_expectations, params['ST_measurements'])
 			#for i in range(len(threebody_operators)):
@@ -309,18 +307,24 @@ def main(params):
 		#for i in range(len(threebody_operators)):
 		#	print(f'{threebody_operators[i]}  {threebody_expectations[i]:.4f} {threebody_expectations_ED[i]:.4f} {threebody_expectations_naive[i]:.4f}')
 	'''
+	utils.tprint('creating expectations dict')
 	threebody_expectations_dict = dict(zip(threebody_operators,threebody_expectations))
 	evaluator = lambda x : threebody_expectations_dict[x]
 
 	### run convex optimization
-	assert onebody_operators[0] == 'I'*params['n']
-	onebody_operators = onebody_operators[1:]
+	
+	#assert onebody_operators[0] == 'I'*params['n']
+	#onebody_operators = onebody_operators[1:]
 	args = (params['n'], onebody_operators, hamiltonian_terms, evaluator, params, state.metrics)
 	kwargs = dict(return_extras = True)
-	hamiltonian_learned_coefficients, T_learned, run_data = hamiltonian_learning.learnHamiltonianFromThermalState(*args, **kwargs)
+	hamiltonian_learned_coefficients, T_learned, run_data = hamiltonian_learning.learnHamiltonianFromThermalStateNew(*args, **kwargs)
+
+	#for i in range(len(hamiltonian_terms)):
+	#	print(f'{hamiltonian_terms[i]}  {hamiltonian_learned_coefficients[i]}')
 
 	H_learned = Hamiltonian(params['n'], hamiltonian_terms, hamiltonian_learned_coefficients)
 	H_in_normalization = H.normalizeCoeffs(threebody_expectations_dict)
+	print(f'H_in_normalization = {H_in_normalization}')
 
 	run_data['H_in'] = H
 	run_data['T_in_normalized'] = 1/params['beta']/H_in_normalization
