@@ -24,7 +24,7 @@ from tenpy.networks.purification_mps import PurificationMPS
 from tenpy.algorithms.purification import PurificationTEBD, PurificationApplyMPO
 
 ### Parameter used to determine n_chunks in DFScomputeParallel. 
-### Generally want it larger than 10, and CHUNKS_PER_THREAD * n_threads << total number of threebody operators
+### Generally want it larger than 10, and CHUNKS_PER_THREAD * expectations_n_threads << total number of threebody operators
 CHUNKS_PER_THREAD = 16
 
 ### In getExpectationValues, if some cached expectation values are missing, all expectation values are recomputed
@@ -443,7 +443,7 @@ class Simulator:
 			self.psi = self.getEquilibriumStateMPS(params)
 
 		if params['simulator_method'] == 'tenpy':
-			n_chunks = params['n_threads']*CHUNKS_PER_THREAD
+			n_chunks = params['expectations_n_threads']*CHUNKS_PER_THREAD
 			t1 = time.time()
 
 			if self.beta == np.inf:
@@ -452,8 +452,8 @@ class Simulator:
 				state_type = 'mixed'
 
 			### we flip the list of operators when passing to DFSComputeParallel because it requires the list to be in reverse alphabetical order
-			args = (self.n, self.psi, np.flip(operators), state_type, params['n_threads'], n_chunks)
-			kwargs = dict(printing = params['printing'], naive = params['naive_compute'])
+			args = (self.n, self.psi, np.flip(operators), state_type, params['expectations_n_threads'], n_chunks)
+			kwargs = dict(naive = params['expectations_naive_compute'])
 			expectations, tenpy_calls = DFScomputeParallel(*args, **kwargs)
 			expectations = np.flip(expectations)
 
@@ -537,7 +537,7 @@ class Simulator:
 				cached_expectations = exp_file[f'expectations/exp_values']
 				cached_expectations_dict = dict(zip(cached_operators, cached_expectations))
 
-			if params['skip_checks'] and not params['overwrite_cache']:
+			if params['expectations_skip_checks'] and not params['expectations_overwrite_cache']:
 				return np.array([cached_expectations_dict[p] for p in operators])
 
 			if params['printing_level'] > 2:
@@ -555,7 +555,7 @@ class Simulator:
 			if all_there:
 				if params['printing_level'] > 2:
 					utils.tprint(f'all required expectations found in cache')
-				if not params['overwrite_cache']:
+				if not params['expectations_overwrite_cache']:
 					if params['printing_level'] > 0:
 						utils.tprint(f'expectations loaded from cache ./caches/{filename}')
 					return np.array([cached_expectations_dict[p] for p in operators])
@@ -640,26 +640,24 @@ class Simulator:
 		return np.array(out)
 
 ### assumes that operators are in REVERSE alphabetical order
-def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, printing = False, naive = False):
+def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, naive = False):
 	if n_threads == 1:
 		if naive:
 			return DFScomputeSingleThreadNaive(n,psi,operators)
 		else:
 			if state_type == 'pure':
-				return DFScomputeSingleThreadPure(n,psi,operators, printing = printing)
+				return DFScomputeSingleThreadPure(n,psi,operators)
 			elif state_type == 'mixed':
-				return DFScomputeSingleThreadMixed(n,psi,operators, printing = printing)
+				return DFScomputeSingleThreadMixed(n,psi,operators)
 			else:
 				raise ValueError
 
-	if printing:
-		utils.tprint(f'computing expectation values. n_theads = {n_threads}')
 	l = len(operators)
 	out = np.zeros(l)
 	ind_list = [(l//n_chunks)*k for k in range(n_chunks)]
 	ind_list += [l]
 	operators_chunks = [operators[ind_list[i]:ind_list[i+1]] for i in range(n_chunks)]
-	#f = lambda x : DFScomputeNew(n, psi, x, printing = printing)
+
 	if naive:
 		f = functools.partial(DFScomputeSingleThreadNaive, n, psi)
 	else:
@@ -675,9 +673,7 @@ def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, print
 	return out, sum([x[1] for x in results]) 
 
 ### assumes that operators are in REVERSE alphabetical order
-def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
-	if printing:
-		utils.tprint(f'computing expectation values (single-threaded)')
+def DFScomputeSingleThreadPure(n, psi, operators):
 	l = len(operators)
 	out = np.zeros(l)
 	previous = '-'*n
@@ -699,19 +695,17 @@ def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
 		leg_contractions += [['B', 'p', 'B*', 'p*']]
 		open_legs = [['B', 'vL', 'vL'], ['B*', 'vL*', 'vL*']]
 		R_tensors[k-1] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs)
-		#tenpy_calls += 1
+		tenpy_calls += 1
 
 	for i in range(l):
-		#if i%(l//100) == 0:
-		#	utils.tprint(f'{i/l:.0%} done')
 		p = operators[i]
 
-		#get the first index that differs from the previous p
+		### get the first index that differs from the previous p
 		for j in range(n):
 			if p[j] != previous[j]:
 				break
 
-		#get the last nontrivial index of p (defaults to -1 if p is the identity)
+		### get the last nontrivial index of p (defaults to -1 if p is the identity)
 		last_nontriv = -1
 		for x in range(n):
 			if p[x] != 'I':
@@ -736,19 +730,13 @@ def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
 		tenpy_calls += 1
 		previous = p
 
-	#print(f'total number of contractions = {tenpy_calls}')
-	#print(f'{tenpy_calls/l - 1} nontrivial contractions per evaluation')
 	return out, tenpy_calls
 
-def DFScomputeSingleThreadNaive(n,psi,operators, printing = False):
-	if printing:
-		utils.tprint(f'computing expectation values (naive method)')
+def DFScomputeSingleThreadNaive(n,psi,operators):
 	return np.array([psi.expectation_value_term(pauliStringToTenpyTerm(n,p)) for p in operators]), len(operators)
 
 ### assumes that operators are in REVERSE alphabetical order
-def DFScomputeSingleThreadMixed(n, psi, operators, printing=False):
-	if printing:
-		utils.tprint(f'computing expectation values (single-threaded)')
+def DFScomputeSingleThreadMixed(n, psi, operators):
 	l = len(operators)
 	out = np.zeros(l)
 	previous = '-'*n
@@ -769,27 +757,23 @@ def DFScomputeSingleThreadMixed(n, psi, operators, printing=False):
 		leg_contractions += [['R', 'vL', 'B', 'vR'], ['R', 'vL*', 'B*', 'vR*']]
 		open_legs = [['B', 'vL', 'vL'], ['B*', 'vL*', 'vL*']]
 		R_tensors[k-1] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs)
-		#tenpy_calls += 1
+		tenpy_calls += 1
 
 	for i in range(l):
-		#if i%(l//100) == 0:
-		#	utils.tprint(f'{i/l:.0%} done')
 		p = operators[i]
-		#j = utils.firstDifferingIndex(p, previous)
 
-		#get the first index that differs from the previous p
+		###  get the first index that differs from the previous p
 		for j in range(n):
 			if p[j] != previous[j]:
 				break
 
-		#get the last nontrivial index of p (defaults to -1 if p is the identity)
+		### get the last nontrivial index of p (defaults to -1 if p is the identity)
 		last_nontriv = -1
 		for x in range(n):
 			if p[x] != 'I':
 				last_nontriv = x
 
 		y = max(j,last_nontriv)
-		#print(f'(j,y) = {(j,y)}')
 
 		for k in range(j,y+1):
 				L = L_tensors[k]
@@ -797,15 +781,6 @@ def DFScomputeSingleThreadMixed(n, psi, operators, printing=False):
 				onsite_term = psi.sites[k].get_op(my_to_tenpy[p[k]])
 				tensor_list = [L, B, B.conj(), onsite_term]
 				tensor_names = ['L', 'B','B*', 'O']
-
-				### METHOD 1 -- doesn't work due to what i believe is a tenpy bug
-				'''
-				leg_contractions = [['B', 'q', 'B*', 'q*'],['B', 'p', 'O', 'p'],['B*', 'p*', 'O', 'p*'], ['L', 'vR', 'B', 'vL'],['L', 'vR*', 'B*', 'vL*']]
-				sequence = [4,1,3,2,0]
-				open_legs = [['B', 'vR', 'vR'], ['B*', 'vR*', 'vR*']]
-				L_tensors[k+1] = tenpy.algorithms.network_contractor.contract(tensor_list, tensor_names, leg_contractions, open_legs, sequence = sequence)
-				tenpy_calls += 1
-				'''
 
 				### METHOD 2
 				tensors = dict(zip(tensor_names,tensor_list))
@@ -816,20 +791,10 @@ def DFScomputeSingleThreadMixed(n, psi, operators, printing=False):
 				L_tensors[k+1] = tenpy.linalg.np_conserved.tensordot(tmp1, tmp2, axes = [['vR','q*','p*'],['vL','q','p*']])
 				tenpy_calls += 3
 
-
-		#print('L comparison:')
-		#print(L_tensor_manual.to_ndarray() - L_tensors[y+1].to_ndarray())
-
 		out[i] = np.real(tenpy.algorithms.network_contractor.contract([L_tensors[y+1], R_tensors[y+1]], ['L', 'R'], [['L','vR','R','vL'], ['L','vR*','R','vL*']]))
-
-		#if np.abs(np.imag(tenpy.algorithms.network_contractor.contract([L_tensors[y+1], R_tensors[y+1]], ['L', 'R'], [['L','vR','R','vL'], ['L','vR*','R','vL*']])))>1e-10:
-		#	print((p,j,y))
-		#	assert False 
 		tenpy_calls += 1
 		previous = p
 
-	#print(f'total number of contractions = {tenpy_calls}')
-	#print(f'{tenpy_calls/l} contractions per evaluation')
 	return out, tenpy_calls
 
 pauli_generators = {'X': np.array([[0,1],[1,0]], dtype = complex),

@@ -11,7 +11,6 @@ import yaml
 import argparse
 import textwrap
 
-
 def printLearningResults(run_data, params):
 	T_in = run_data['T_in_normalized']
 	T_learned = run_data['T_learned']
