@@ -21,7 +21,7 @@ class SparseTensor:
 			if order:
 				self.order()
 
-		#Initialize from a dense matrix. Not meant to be run on large matrices, used only for testing
+		### Initialize from a dense matrix. Not meant to be run on large matrices, used only for testing
 		elif len(args) == 1:
 			array_like = args[0]
 			self.shape = np.array(array_like.shape)
@@ -54,7 +54,7 @@ class SparseTensor:
 		res.addUpRedundantEntries()
 		return res
 
-	## checks whether things are of the right type, if indices are out of bounds, and so on
+	### checks whether things are of the right type, if indices are out of bounds, and so on
 	def consistencyCheck(self):
 		if not type(self.shape) == np.ndarray:
 			raise ValueError(f'self.shape is wrong type: {type(self.shape)} (expected numpy ndarray)')
@@ -68,7 +68,7 @@ class SparseTensor:
 			raise ValueError(f'self.indices has wrong shape: {self.indices.shape} ' +
 				f'(expected self.indices.shape = (len(self.values), len(self.shape)) = {(len(self.values), len(self.shape))})')
 
-		## checking if any indices are out of bounds:
+		### checking if any indices are out of bounds:
 		for i in range(len(self.shape)):
 			indices_out_of_bounds = self.indices[:,i] >= self.shape[i]
 			if any(indices_out_of_bounds):
@@ -76,7 +76,7 @@ class SparseTensor:
 				raise ValueError(f'Index out of bounds. shape is {self.shape}.'
 					+ f' The following entry has index {i} out of bounds: index = {self.indices[j]} value = {self.values[j]}')
 
-		## checking if indices are sorted and if duplicates exist
+		### checking if indices are sorted and if duplicates exist
 		indices_sorted = True
 		no_duplicate_indices = True
 
@@ -130,7 +130,7 @@ class SparseTensor:
 
 		return SparseTensor(new_shape, new_indices, new_values, order = True, dtype = float)
 
-	#ASSUMES INDICES ARE SORTED
+	### assumes indices are sorted lexicographically
 	def addUpRedundantEntries(self):
 		if len(self.indices) == 0:
 			return
@@ -153,7 +153,7 @@ class SparseTensor:
 	def isEqual(self,other):
 		return np.array_equal(self.shape, other.shape) and np.array_equal(self.indices, other.indices) and np.array_equal(self.values, other.values)
 
-	#orders its entries by lexicographical order of index
+	### orders entries by lexicographical order of index
 	def order(self, little_endian = False):
 		if little_endian:
 			nonzeros_indices_sorted = sorted(range(len(self.values)), key = lambda i: list(self.indices[i]).reverse())
@@ -195,9 +195,9 @@ class SparseTensor:
 
 		return SparseTensor(new_shape, new_indices, self.values, order = True)
 
-	#vectorizes given axes in Fortran order. The new axis is by default the leftmost one
-	#WARNING: result is not ordered if called with order = False
-	def vectorize(self, axes):
+	### vectorizes given axes in Fortran order. The new axis is by default the leftmost one
+	### WARNING: result is not ordered if called with order = False
+	def vectorize(self, axes, order = True):
 		axes_complement = [i for i in range(len(self.shape)) if i not in axes]
 		prefactors = [1]
 		for i in range(len(axes)-1):
@@ -213,12 +213,12 @@ class SparseTensor:
 		else:
 			shape_new = np.prod(self.shape[axes]).reshape((1,))
 
-		return SparseTensor(shape_new, indices_new, self.values)
+		return SparseTensor(shape_new, indices_new, self.values, order = order)
 
-	#vectorizes a pair of axes, keeping only the lower triangular entries, ie, 
-	#those where vectorized indices are in (strictly, if strict = True) decreasing order
-	#mosek the the scale_off_diagonals keyword is for mosek's vectorization map
-	#WARNING: result is not ordered if called with order = False
+	### vectorizes a pair of axes, keeping only the lower triangular entries, ie, 
+	### those where vectorized indices are in (strictly, if strict = True) decreasing order
+	### mosek the the scale_off_diagonals keyword is for mosek's vectorization map
+	### WARNING: result is not ordered if called with order = False
 	def vectorizeLowerTriangular(self, axes, strict = True, order = True, scale_off_diagonals = None):
 		assert len(axes) == 2
 		assert self.shape[axes[0]] == self.shape[axes[1]]
@@ -249,7 +249,7 @@ class SparseTensor:
 					first_index_out = -1
 				return np.concatenate(([first_index_out], index_in[axes_complement]))
 
-		## vectorize each index, removing those that are not in the lower triangular part
+		### vectorize each index, removing those that are not in the lower triangular part
 		indices_new = []
 		values_new = []
 
@@ -286,10 +286,9 @@ class SparseTensor:
 		if len(self.shape) == 1:
 			self.indices = np.reshape(indices_new, (len(indices_new),1))
 
-		return SparseTensor(shape_new, indices_new, values_new, order = True)
+		return SparseTensor(shape_new, indices_new, values_new, order = order)
 		
-
-	#devectorizes axis given by vector_axis. Expanded axes become the leftmost ones
+	### devectorizes axis given by vector_axis. Expanded axes become the leftmost ones
 	def devectorize(self, vector_axis, new_axes_shape):
 		assert self.shape[vector_axis] == np.prod(new_axes_shape)
 		axes_complement = [i for i in range(len(self.shape)) if i != vector_axis]
@@ -312,13 +311,13 @@ class SparseTensor:
 		
 		return SparseTensor(self.shape, indices_new, self.values, order = True)
 
-	#Contracts with a dense vector v along the last axis. For instance if A is order 3, returns sum_k A_ijk v_k
-	#If skip_ordering = True, assumes that indices are lexicographically (ie. big-endian) ordered
-	def contractRight(self,v, skip_ordering = False):
+	### Contracts with a dense vector v along the last axis. For instance if A is order 3, returns sum_k A_ijk v_k
+	### If skip_ordering = True, assumes that indices are lexicographically (ie. big-endian) ordered
+	def contractRight(self,v, order = True):
 		if self.shape[-1] != len(v):
 			raise ValueError(f'rightmost tensor dimension {self.shape[-1]} does not match vector dimension {len(v)}')
 
-		if not skip_ordering:
+		if order:
 			self.order()
 		out_shape = self.shape[:-1]
 		out_indices = []
@@ -344,14 +343,14 @@ class SparseTensor:
 		
 		return out
 
-	#Contracts with a dense vector v along the first axis. For instance if A is order 3, returns sum_i A_ijk v_i
-	#If skip_ordering = True, assumes that indices are REVERSE-lexicographically (ie. little-endian) ordered
-	def contractLeft(self,v, skip_ordering = False):
+	### Contracts with a dense vector v along the first axis. For instance if A is order 3, returns sum_i A_ijk v_i
+	### If skip_ordering = True, assumes that indices are REVERSE-lexicographically (ie. little-endian) ordered
+	def contractLeft(self,v, order = True):
 		if self.shape[0] != len(v):
 			raise ValueError(f'leftmost tensor dimension {self.shape[0]} does not match vector dimension {len(v)}')
 
 		assert self.shape[-1] == len(v)
-		if not skip_ordering:
+		if order:
 			self.order(little_endian = True)
 		out_shape = self.shape[1:]
 		out_indices = []
@@ -379,7 +378,7 @@ class SparseTensor:
 
 ### matrix operations
 
-#same as the same-named function in SparseTensor but for dense matrices
+### same as SparseTensor.vectorizeLowerTriangular but for dense matrices
 def vectorizeLowerTriangular(a, strict = True, scale_off_diagonals = None, printing = False):
 	assert len(a.shape) == 2
 	assert a.shape[0] == a.shape[1]
@@ -465,23 +464,20 @@ def checkCommute(pauli_1,pauli_2):
 def determineSupport(pauli_string):
 	return [c != 'I' for c in pauli_string]
 
-def supportBitString(pauli):
-	return ''.join(['0' if x == 'I' else '1' for x in pauli])
-
 def weight(pauli_string):
 	return sum([1 for c in pauli_string if c != 'I'])
 
-#given a list of unique strings, returns a dict that takes a string and returns the index of that string
+### given a list of unique strings, returns a dict that takes a string and returns the index of that string
 def invertStringList(l):
 	d = {}
 	for i in range(len(l)):
 		d[l[i]]= i
 	return d
 
-#returns compressed representation of a pauli.
-#first number is the Hamming weight
-#then, for a single-site pauli factor, we have the letter X,Y,or Z and the index of the corresponding site.
-#For instance IYIIIXI is 2 Y 1 X 5 and IIIIZZZ is 3 Z 4 Z 5 Z 6
+### returns compressed representation of a pauli.
+### first number is the Hamming weight
+### then, for a single-site pauli factor, we have the letter X,Y,or Z and the index of the corresponding site.
+### For instance IYIIIXI is 2 Y 1 X 5 and IIIIZZZ is 3 Z 4 Z 5 Z 6
 def compressPauli(pauli):
 	n = len(pauli)
 	supp = determineSupport(pauli)
@@ -502,8 +498,7 @@ def compressPauliToList(pauli):
 			out.append((pauli[i],i))
 	return out
 
-#returns decompressed representation of a pauli. For instance 2 Y 2 X 5 is converted to IIYIIX 
-#TODO: test
+### returns decompressed representation of a pauli. For instance, with n=6, 2 Y 2 X 5 is converted to IIYIIX 
 def decompressPauli(pauli_compressed,n):
 	pauli_list_out = ['I']*n
 	pauli_compressed_list = pauli_compressed.split(' ')
@@ -513,27 +508,6 @@ def decompressPauli(pauli_compressed,n):
 		index = int(pauli_compressed_list[2+2*i])
 		pauli_list_out[index] = pauli_char
 	return ''.join(pauli_list_out)
-
-#returns a list of paulis of Hamming weight w
-def buildWeightWPaulis(n,w):
-	if w == 0:
-		return ['I'*n]
-	out = []
-	for c in itertools.combinations(range(n),w):
-		for indices in itertools.product(range(3), repeat = w):
-			p = ['I',]*n
-			for i in range(w):
-				p[c[i]] = ['X','Y','Z'][indices[i]]
-			out.append("".join(p))
-	return out
-
-#returns a list of paulis up to and including weight w
-def buildPaulisUpToWeightW(n,w):
-	out = []
-	for i in range(0,w+1):
-		out = out + buildWeightWPaulis(n,i)
-	assert out[0] == 'I'*n
-	return out[1:]
 
 def buildKLocalPaulis1D(n,k, periodic_bc):
 	if n == 1:
@@ -619,60 +593,6 @@ def computeExpectation(pauli_string, rho):
 	pauli_matrix = pauliMatrix(pauli_string)
 	return np.real(np.trace(rho@pauli_matrix))
 
-def generateCliffordMatrix(pauli_string):
-	pauli_list = [clifford_generators[c] for c in pauli_string]
-	return ft.reduce(scipy.sparse.kron, pauli_list) #TODO: see if we're using dense matrices anywhere
-
-def intToBitstring(value, length):
-	return format(value, '0{}b'.format(length))
-
-def intToBoolstring(value, length):
-	return bitStringToBoolstring(intToBitstring(value,length),length)
-
-def bitStringToBoolstring(bitstring, length):
-	return [c == '1' for c in bitstring]
-
-#loads a wavefunction (as a numpy array) from a filename
-def loadWavefunction(state_filename):
-	with open('./states/'+state_filename+'.txt','r') as f:
-		lines = f.readlines()
-	l = len(lines)
-	n = int(lines[0][:-1])
-	assert l == 2**n+1
-	psi = np.zeros(2**n, dtype = complex)
-	for i in range(2**n):
-		line = lines[i+1]
-		re_str,im_str = line[:-1].split(' ')#last character of each line is \n
-		psi[i] = float(re_str)+ 1j*float(im_str)
-	return n,psi
-
-def strToBool(s):
-	if s == 'True' or s == 'T' or s == 't' or s == '1':
-		return True
-	elif s == 'False' or s == 'F' or s == 'f' or s == '0':
-		return False
-	else:
-		raise ValueError
-
-#assumes a and b are same length
-def firstDifferingIndex(a,b):
-	for i in range(len(a)):
-		if a[i] != b[i]:
-			return i
-	raise ValueError('inputs are equal or second one is longer')
-
-#returns a function that takes a list of Paulis and returns their expectations
-def buildStateEvaluator(state_filename, type):
-	if type == 'wavefunction':
-		n,psi = loadWavefunction(state_filename)
-		evaluator = lambda paulis : [computeExpectationWaveFunc(p, psi, n) for p in paulis]
-	elif type == 'MPS':
-		#TODO: implement MPS
-		raise ValueError
-	else:
-		raise ValueError
-	return evaluator, n
-
 #builds tensor C_ijk such that a_ia_j = sum_k C_ijk a_k
 def buildMultiplicationTensor(onebody_operators):
 	n = len(onebody_operators[0])
@@ -707,22 +627,17 @@ pauli_char_to_int = dict(I = 0, X = 1, Y = 2, Z = 3)
 def pauliStringToIntArray(p):
 	return np.array([pauli_char_to_int[x] for x in p], dtype = 'uint8')
 
-def buildThreeBodyTermsFast(onebody_operators, hamiltonian_terms, printing = False):
-	if printing:
-		tprint('building three body terms')
-
+def buildThreeBodyTerms(onebody_operators, hamiltonian_terms):
 	n = len(onebody_operators[0])
 	r = len(onebody_operators)
-	h = len(hamiltonian_terms)
+	s = len(hamiltonian_terms)
 
 	onebody_operators = np.asarray(onebody_operators)
 	hamiltonian_terms = np.asarray(hamiltonian_terms)
 
-	#print(f'n = {n}, r = {r}, h = {h}')
-
 	#noncommuting[i] is a numpy array containing all the indices of onebody operators that don't commute with hamiltonian_terms[i]
-	noncommuting = [None]*h
-	for i in range(h):
+	noncommuting = [None]*s
+	for i in range(s):
 		a = hamiltonian_terms[i]
 		noncommuting_with_a = []
 		for j in range(r):
@@ -739,7 +654,7 @@ def buildThreeBodyTermsFast(onebody_operators, hamiltonian_terms, printing = Fal
 
 	out_intarray = np.empty(shape = (0,n), dtype = 'uint8')
 	out_set = set()
-	for j in range(h):
+	for j in range(s):
 		b = hamiltonian_terms_intarray[j]
 		for k in noncommuting[j]:
 			c = onebody_operators_intarray[k]
@@ -758,23 +673,15 @@ def sewPairs(a,b):
 	n = b.shape[0]
 	x = np.repeat(a, n, axis=0)
 	y = np.tile(b, (m, 1))
-	#print(f'a.shape = {a.shape}')
-	#print(f'b.shape = {b.shape}')
-	#print(f'x.shape = {x.shape}')
-	#print(f'y.shape = {y.shape}')
-	#return np.hstack((x.reshape((m*n,1)),y))
+
 	return np.hstack((x,y))
 
-def buildTripleProductTensorFast(onebody_operators, hamiltonian_terms, threebody_operators, printing = False):
-	if printing:
-		tprint('building triple product tensor')
-
+### builds a rank-4 tensor C_ijkl such that b_i[h_j,b_k] = sum_l C_ijkl c_l,
+### where b_i, b_k are single-body operators, h_j is a hamiltonian term and c_l are three-body operators
+def buildTripleProductTensor(onebody_operators, hamiltonian_terms, threebody_operators):
 	n = len(onebody_operators[0])
 	r = len(onebody_operators)
 	h = len(hamiltonian_terms)
-
-	if printing:
-		tprint(f'n = {n}, r = {r}, h = {h}')
 
 	onebody_operators = np.asarray(onebody_operators)
 	hamiltonian_terms = np.asarray(hamiltonian_terms)
@@ -794,13 +701,12 @@ def buildTripleProductTensorFast(onebody_operators, hamiltonian_terms, threebody
 
 	threebody_operators_indices = dict(zip(threebody_operators, range(len(threebody_operators))))
 
-	##phase_table[4*x+y] = phase of sigma_x*sigma_y, where x and y are integers between 0 and 3 representing two paulis
+	### phase_table[4*x+y] is the phase (represented as an integer mod 4) of sigma_x*sigma_y, where x and y are integers between 0 and 3 representing two paulis
 	phase_table = np.zeros(16, dtype = 'uint8')
 	phase_table[[6,11,13]] = 1
 	phase_table[[7,9,14]] = 3
 
-	###first compute the commutators [a_j, a_k] and put them into an array whose rows are [j,k, (log coefficient of [a_j,a_k]), pauli of [a_j,a_k] as a list of ints]
-	#utils.tprint('creating commutators array')	
+	### compute the commutators [a_j, a_k] and put them into an array whose rows are [j,k, (phase of [a_j,a_k]), pauli of [a_j,a_k] as a list of ints]
 	commutators_jk = []
 	commutators_logz = []
 	commutators_paulis = []
@@ -829,85 +735,20 @@ def buildTripleProductTensorFast(onebody_operators, hamiltonian_terms, threebody
 	last_index = pauli_char_table[multiplied_paulis].view(dtype = '<U'+str(n))
 	last_index = np.vectorize(threebody_operators_indices.__getitem__)(last_index) ### this is the current bottleneck
 	t2 = time.time()
-	#if printing:
-	#	tprint(f'reversing l index list took {t2-t1:.2f} seconds')
+
 
 	shape = np.asarray([r,h,r,len(threebody_operators)])
-	#print(f'combined_indices.shape = {combined_indices.shape}')
-	#print(f'last_index.shape = {last_index.shape}')
-	#print(f'total_phases.shape = {total_phases.shape}')
 	indices = np.hstack((combined_indices, last_index))
 
-	out = SparseTensor(shape,indices,total_phases)## if everything is working correctly, this tensor should be sorted
-
-	if printing:
-		tprint(f'triple_product_tensor has {len(out.values)} nonzero entries')
+	out = SparseTensor(shape,indices,total_phases)
 
 	return out
-
-#a tensor C_ijkl such that a_i[a_j,a_k] = sum_l C_ijkl b_l,
-#where a_i, a_k are single-body operators, a_j is a "hamiltonian operator" and b_l are three-body operators
-def buildTripleProductTensor(onebody_operators, hamiltonian_terms, printing = False):
-	if printing:
-		tprint('building triple product tensor')
-
-	n = len(onebody_operators[0])
-	r = len(onebody_operators)
-	h = len(hamiltonian_terms)
-
-	#create a dict that, given a hamiltonian operator, returns a list of 
-	#all one-body operators that don't commute with it
-	noncommuting_dict = {}
-	for a in hamiltonian_terms:
-		noncommuting_with_a = []
-		for b in onebody_operators:
-			if checkCommute(a,b) == False:
-				noncommuting_with_a.append(b)
-		noncommuting_dict[a] = noncommuting_with_a
-
-	#create a dict of indices of one-body operators
-	onebody_operators_dict = invertStringList(onebody_operators)
-
-	indices = []
-	values = []
-
-	threebody_operators = []
-	threebody_indices_dict = {}
-	threebody_len = 0
-
-	for i in range(r):
-		for j in range(h):
-			a = onebody_operators[i]
-			b = hamiltonian_terms[j]
-			for c in noncommuting_dict[b]:
-				V,v = multiplyPaulis(a,b)
-				W,w = multiplyPaulis(V,c)#v * w * W = abc which equals a[b,c]/2 since b and c are noncommuting paulis
-
-				if W not in threebody_indices_dict:
-					threebody_operators.append(W)
-					threebody_len += 1
-					l = threebody_len-1
-					threebody_indices_dict[W] = l
-				else:
-					l = threebody_indices_dict[W]
-
-				k = onebody_operators_dict[c]
-
-				indices.append([i,j,k,l])
-				values.append(2*v*w)
-
-	shape = np.asarray([r,h,r,len(threebody_operators)])
-	out = SparseTensor(shape,indices,values)
-	out.removeZeros()
-	if printing:
-		tprint(f'number of nonzeros in triple_product_tensor is {len(out.values)} ({len(values)} before removing spurious entries)')
-
-	return out, threebody_operators
 
 def tprint(s):
 	current_time_string = time.strftime("%H:%M:%S", time.localtime())
 	print(f'{current_time_string}: {s}')
 
+### given a list of matrices, plots their spectra
 def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = 'linear', yscale = 'linear', print_lowest = None, print_highest = None):
 	cmap = colormaps['viridis']
 
@@ -953,7 +794,7 @@ def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = '
 
 ##### LOADING AND SAVING
 
-#creates a directory to save the results of the run
+### creates a directory to save the results of the run
 def createSaveDirectory():
 	now = datetime.datetime.now()
 	dt_string = now.strftime("%d-%m-%Y--%H-%M-%S")
@@ -973,32 +814,3 @@ def createSaveDirectory():
 			n+= 1
 		raise RuntimeError("tried to make too many save directories with the same name")
 
-#DEPRECATED
-def saveExpectations(observables_list, expectations_list, filename):
-	with open('./expectations/'+ filename, 'w') as f:  
-	    f.write(','.join(['pauli', 'pauli_compressed' ,'expectation'])+'\n')
-	    l = len(observables_list)
-	    assert len(expectations_list) == l
-	    for i in range(l):
-	    	f.write(','.join([observables_list[i], compressPauli(observables_list[i]), str(expectations_list[i])])+'\n')
-
-#DEPRECATED
-def loadExpectations(filename):
-	with open('./expectations/'+filename,'r') as f:
-		lines = f.readlines()
-	l = len(lines)
-	assert lines[0].split(',')[0] == 'pauli'
-	print(lines[0].split(',')[2])
-	assert lines[0].split(',')[2] == 'expectation\n'
-
-	paulis = []
-	expectations = []
-	for line in lines[1:]:
-		line_split = line.split(',')
-		pauli = line_split[0]
-		expectation_string = line_split[2][:-1]#line ends in \n so this needs to be deleted
-
-		paulis.append(pauli)
-		expectations.append(float(expectation_string))
-
-	return paulis, expectations

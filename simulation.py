@@ -23,12 +23,18 @@ from tenpy.algorithms import dmrg
 from tenpy.networks.purification_mps import PurificationMPS
 from tenpy.algorithms.purification import PurificationTEBD, PurificationApplyMPO
 
-#parameter used to determine n_chunks in DFScomputeParallel. 
-#Generally want it larger than 10, and CHUNKS_PER_THREAD * n_threads << total number of threebody operators
+### Parameter used to determine n_chunks in DFScomputeParallel. 
+### Generally want it larger than 10, and CHUNKS_PER_THREAD * n_threads << total number of threebody operators
 CHUNKS_PER_THREAD = 16
 
+### In getExpectationValues, if some cached expectation values are missing, all expectation values are recomputed
+### In this case, we check that cached expectations agree with computed expectations
+### This parameter determines the tolerance used in this equality check 
 CACHE_TOLERANCE = 1e-10
 
+### When computing the thermal state at a given inverse temperature beta, 
+### some of the intermediate states at inverse temperature (0,beta) are cached
+### This parameter determines which ones are cached
 BETA_SAVE_INTERVAL = 1e-1
 
 #TODO: replace with numpy native sort
@@ -171,7 +177,7 @@ class Hamiltonian:
 		else:
 			return 1
 
-	#MAY REFUSE TO WORK IF periodic = True AND self.terms CONTAINS TERMS OF RANGE MORE THAN n/2 TODO:FIX or make it throw an exception
+	### MAY REFUSE TO WORK IF periodic = True AND self.terms CONTAINS TERMS OF RANGE MORE THAN n/2 TODO:FIX or make it throw an exception
 	def makeTranslationInvariant(self, periodic):
 		new_terms = self.terms
 		new_terms_set = set(self.terms)
@@ -258,92 +264,7 @@ class Hamiltonian:
 
 		self.sort()
 
-	# DEPRECATED ---FOR BACKWARDS COMPATIBILITY. in the future switch to YAML only
-	'''
-	def loadHamiltonianFromTextFile(self, filename):
-		identity = lambda x : x 
-		#keys are expected parameters and values are the function used to parse the corresponding value
-		param_conversions = {
-							'n' : int,
-							'k' : int,				
-							'translation_invariant' : utils.strToBool,
-							'periodic' : utils.strToBool,
-							'locality' : identity
-							}
-
-		print(f'loading Hamiltonian from {filename}')
-		with open(filename,'r') as f:
-			lines = f.readlines()
-		l = len(lines)
-		raw_params_dict = stringToDict(lines[0][:-1])#line ends in \n so this needs to be deleted
-		
-		params_dict = dict([(key, param_conversions[key](raw_params_dict[key])) for key in raw_params_dict.keys()])
-		n = params_dict['n']
-
-		if params_dict['locality'] == 'short_range':
-			terms = utils.buildKLocalPaulis1D(n,params_dict['k'], params_dict['periodic'])
-		elif params_dict['locality'] == 'long_range':
-			raise ValueError('havent implemented long range interactions')
-			### add another parameter for range
-		else:
-			raise ValueError('unrecognized value ' + params_dict['locality'] + ' for parameter locality')
-
-		coefficients = np.zeros(len(terms))
-
-		##TODO: replace with reading a yaml file 
-		if len(lines[1].split(',')) == 3:
-			assert lines[1].split(',')[0] == 'pauli'
-			assert lines[1].split(',')[2] == 'pauli_compressed\n'
-			assert lines[1].split(',')[2] == 'coefficient\n'
-
-			for line in lines[2:]:
-				line_split = line.split(',')
-				pauli = line_split[0]
-				coefficient_string = line_split[2]
-				if coefficient_string[-1] == '\n':
-					coefficient_string = coefficient_string[:-1]
-
-				if params_dict['translation_invariant']:
-					for pauli_translated in translates(pauli):
-						if pauli_translated not in terms:
-							raise ValueError('Encountered unexpected term ' + pauli_translated + ' when loading Hamiltonian')
-						coefficients[terms.index(pauli_translated)] = float(coefficient_string)
-				else:
-					if pauli not in terms:
-						raise ValueError('Encountered unexpected term ' + pauli + ' when loading Hamiltonian')
-					coefficients[terms.index(pauli)] = float(coefficient_string)
-
-		if len(lines[1].split(',')) == 2:
-			assert lines[1].split(',')[0] == 'pauli'
-			assert lines[1].split(',')[1] == 'coefficient\n'
-
-			for line in lines[2:]:
-				line_split = line.split(',')
-				pauli = utils.decompressPauli(line_split[0],n)
-				coefficient_string = line_split[1]
-				if coefficient_string[-1] == '\n':
-					coefficient_string = coefficient_string[:-1]
-				if params_dict['translation_invariant']:
-					for pauli_translated in translates(n, pauli, params_dict['periodic']):
-						if pauli_translated not in terms:
-							raise ValueError('Encountered unexpected term ' + pauli_translated + ' when loading Hamiltonian')
-						coefficients[terms.index(pauli_translated)] = float(coefficient_string)
-				else:
-					if pauli not in terms:
-						raise ValueError('Encountered unexpected term ' + pauli + ' when loading Hamiltonian')
-					coefficients[terms.index(pauli)] = float(coefficient_string)
-
-			#sort the paulis to make it look nicer
-			#sorted_pairs = sorted(zip(terms,coefficients), key = lambda x : utils.compressPauliToList(x[0]))
-			#terms = [x[0] for x in sorted_pairs]
-			#coefficients = [x[1] for x in sorted_pairs]
-
-		symmetries = [] ### TODO: implement symmetries
-
-		self.n, self.terms, self.coefficients, self.symmetries = n,terms,coefficients, symmetries
-		'''
-
-### tenpy model that will be used to compute thermal & ground states
+### tenpy model that is used to compute thermal & ground states
 class generalSpinHalfModel(CouplingMPOModel):
 	default_lattice = Chain
 	force_default_lattice = True
@@ -390,7 +311,7 @@ class Simulator:
 		self.psi = None
 		self.metrics = {}
 
-	def computeEquilibriumState(self, params, return_intermediate_results = False):
+	def computeEquilibriumStateMPS(self, params, return_intermediate_results = False):
 		if params['simulator_method'] == 'tenpy':
 			t1 = time.time()
 			if self.beta == np.inf:
@@ -405,7 +326,7 @@ class Simulator:
 				t2 = time.time()
 				self.metrics['rho_computation_time_by_MPO'] = t2-t1
 		else:
-			raise ValueError(f"unrecognized value of parameter simulator_method: {params_['simulator_method']}")
+			raise ValueError(f"invalid value of parameter simulator_method: {params_['simulator_method']} (expected 'tenpy'))")
 
 		if return_intermediate_results:
 			if params['simulator_method'] == 'tenpy' and self.beta < np.inf:
@@ -438,10 +359,8 @@ class Simulator:
 			except OSError:
 				utils.tprint(f"warning: OSError when checking existing cache at {path}. overwriting")
 
-
 		with h5py.File(path, 'w') as f:
 			tenpy.tools.hdf5_io.save_to_hdf5(f, data)
-
 
 	def loadTenpyMPS(self,path):
 		with h5py.File(path, 'r') as f:
@@ -450,13 +369,15 @@ class Simulator:
 		psi_params = data['parameters']
 		return psi, psi_params
 
-	def loadOrComputeEquilibriumState(self, params):
+	def getEquilibriumStateMPS(self, params):
 		if params['MPS_no_cache']:
-			return self.computeEquilibriumState(params, return_intermediate_results = False)
+			return self.computeEquilibriumStateMPS(params, return_intermediate_results = False)
 
 		cache_filename = f"{self.H_name}__b={self.beta:.10f}__state.hdf5"
 		cache_directory = './caches/mps/'
 		cache_path = cache_directory + cache_filename
+
+		### load the state from a cache if possible
 
 		if params['MPS_overwrite_cache'] == False:
 			loading = False
@@ -464,12 +385,10 @@ class Simulator:
 				utils.tprint(f'mps cache {cache_filename} not found')
 			else:
 				utils.tprint(f'mps cache {cache_filename} found')
-				### some sanity checks on the cache
+
 				passed_sanity_check = False
 				with h5py.File(cache_path, 'r') as f:
-					#if 'psi' not in f: ## maybe put some sanity checks later
-					#	utils.tprint(f'warning: psi not found in expectations cache')
-					if False: # put sanity checks here if needed
+					if False: ### TODO: put some sanity checks here if needed
 						pass
 					else:
 						passed_sanity_check = True
@@ -490,11 +409,12 @@ class Simulator:
 				print(yaml.dump(psi_params))
 				return psi
 
-		#compute the state
+		### if execution reaches this line, the state was not loaded and will be computed
+
 		if self.beta < np.inf:
-			betas, psis = self.computeEquilibriumState(params, return_intermediate_results = True)
+			betas, psis = self.computeEquilibriumStateMPS(params, return_intermediate_results = True)
 			if round(betas[-1],10) != round(self.beta,10):
-				utils.tprint(f'warning: highest beta was not computed, something is off by one: betas[-1] = {betas[-1]}, self.beta = {self.beta}')
+				utils.tprint(f'warning: highest beta was not computed betas[-1] = {betas[-1]}, self.beta = {self.beta}')
 
 			utils.tprint('saving states')
 			if not os.path.exists(cache_directory):
@@ -507,7 +427,7 @@ class Simulator:
 					self.saveTenpyMPS(save_path, psis[i], params)
 			return psis[-1]
 		else:
-			psi = self.computeEquilibriumState(params, return_intermediate_results = False)
+			psi = self.computeEquilibriumStateMPS(params, return_intermediate_results = False)
 			utils.tprint('saving state')
 			if not os.path.exists(cache_directory):
 					os.mkdir(cache_directory)
@@ -517,10 +437,10 @@ class Simulator:
 			self.saveTenpyMPS(save_path, psi, params)
 			return psi
 
+	### Assumes that operators are sorted in alphabetical order
 	def computeExpectations(self, operators, params):
 		if self.psi == None and params['simulator_method'] != 'ED':
-			#self.psi = self.computeEquilibriumState(params)
-			self.psi = self.loadOrComputeEquilibriumState(params)
+			self.psi = self.getEquilibriumStateMPS(params)
 
 		if params['simulator_method'] == 'tenpy':
 			n_chunks = params['n_threads']*CHUNKS_PER_THREAD
@@ -531,9 +451,11 @@ class Simulator:
 			else:
 				state_type = 'mixed'
 
-			args = (self.n, self.psi, operators, state_type, params['n_threads'], n_chunks)
+			### we flip the list of operators when passing to DFSComputeParallel because it requires the list to be in reverse alphabetical order
+			args = (self.n, self.psi, np.flip(operators), state_type, params['n_threads'], n_chunks)
 			kwargs = dict(printing = params['printing'], naive = params['naive_compute'])
 			expectations, tenpy_calls = DFScomputeParallel(*args, **kwargs)
+			expectations = np.flip(expectations)
 
 			t2 = time.time()
 			self.metrics['tenpy_calls'] = tenpy_calls
@@ -543,10 +465,17 @@ class Simulator:
 			expectations = self.computeExpectationsED(operators)
 		else:
 			raise ValueError(f"unrecognized value of parameter simulator_method: {params['simulator_method']}")
+
 		return expectations
 
 	def getExpectations(self, operators, params):
-		if params['no_cache']:
+		if np.abs(params['disorder']) > 0 and not (params['expectations_no_cache'] and params['MPS_no_cache']):
+			if params['printing_level'] > 2:
+				utils.tprint("Skipping all caching because Hamiltonian has nonzero disorder")
+			params['expectations_no_cache'] = True
+			params['MPS_no_cache'] = True
+
+		if params['expectations_no_cache']:
 			return self.computeExpectations(operators, params)
 
 		if not os.path.exists('./caches/'):
@@ -556,33 +485,39 @@ class Simulator:
 
 		new_cache = True
 		if not os.path.exists('./caches/'+filename):
-			utils.tprint(f'expectations cache at {filename} not found')
+			if params['printing_level'] > 2:
+				utils.tprint(f'expectations cache {filename} not found')
 		else:
-			utils.tprint(f'expectations cache {filename} found')
+			if params['printing_level'] > 2:
+				utils.tprint(f'expectations cache {filename} found')
 			### some sanity checks on the cache
 			passed_sanity_check = False
 			with h5py.File(f'./caches/{filename}', 'r') as exp_file:
 				if '/hamiltonian/terms' not in exp_file:
-					utils.tprint(f'warning: dataset /hamiltonian/terms not found in cache at ./caches/{filename}')
+					message = f'warning: dataset /hamiltonian/terms not found in cache at ./caches/{filename}'
 				elif '/hamiltonian/coeffs' not in exp_file:
-					utils.tprint(f'warning: dataset /hamiltonian/coeffs not found in cache at ./caches/{filename}')
+					message = f'warning: dataset /hamiltonian/coeffs not found in cache at ./caches/{filename}'
 				elif '/expectations/operators' not in exp_file:
-					utils.tprint(f'warning: dataset /expectations/operators not found in cache at ./caches/{filename}')
+					message = f'warning: dataset /expectations/operators not found in cache at ./caches/{filename}'
 				elif '/expectations/exp_values' not in exp_file:
-					utils.tprint(f'warning: dataset /expectations/exp_values not found in cache at ./caches/{filename}')	
+					message = f'warning: dataset /expectations/exp_values not found in cache at ./caches/{filename}'
 				elif not np.array_equal(np.char.decode(exp_file['/hamiltonian/terms']), self.H.terms):
-					utils.tprint(f'warning: cached expectations hamiltonian terms do not agree with current hamiltonian')
+					message = f'warning: cached expectations hamiltonian terms do not agree with current hamiltonian'
 				elif not np.array_equal(exp_file['/hamiltonian/coeffs'], self.H.coefficients):
-					utils.tprint(f'warning: cached expectations hamiltonian coefficients do not agree with current hamiltonian')
+					message = f'warning: cached expectations hamiltonian coefficients do not agree with current hamiltonian'
 				else:
 					passed_sanity_check = True
-					utils.tprint(f'cache {filename} passed sanity checks')
+					message = f'cache {filename} passed sanity checks'
+
+			if (passed_sanity_check == False and params['printing_level'] > 0) or (passed_sanity_check == True and params['printing_level'] > 2):
+				utils.tprint(message)
 
 			if passed_sanity_check:
 				new_cache = False
 			else:
 				tmp_file_path = f'./caches/tmp/{filename}'
-				utils.tprint(f'unable to read expecations cache at ./caches/{filename}. moving old cache to {tmp_file_path}')
+				if params['printing_level'] > 0:
+					utils.tprint(f'unable to read expecations cache at ./caches/{filename}. moving old cache to {tmp_file_path}')
 				if not os.path.exists('./caches/tmp/'):
 						os.mkdir('./caches/tmp/')
 				os.replace(f'./caches/{filename}', tmp_file_path)
@@ -596,7 +531,8 @@ class Simulator:
 
 		else:
 			with h5py.File(f'./caches/{filename}', 'r') as exp_file:
-				utils.tprint(f'decoding strings')
+				if params['printing_level'] > 2:
+					utils.tprint(f'decoding strings')
 				cached_operators = np.char.decode(exp_file[f'expectations/operators'])
 				cached_expectations = exp_file[f'expectations/exp_values']
 				cached_expectations_dict = dict(zip(cached_operators, cached_expectations))
@@ -604,27 +540,34 @@ class Simulator:
 			if params['skip_checks'] and not params['overwrite_cache']:
 				return np.array([cached_expectations_dict[p] for p in operators])
 
-			utils.tprint(f'checking that all required expectations are cached')
+			if params['printing_level'] > 2:
+				utils.tprint(f'checking that all required expectations are cached')
 			all_there = True
 			operators_set = set(cached_operators)
 
 			for t in operators:
 				if t not in operators_set:
-					print(f'operator {t} not found in cache')
+					if params['printing_level'] > 1:
+						utils.tprint(f'operator {t} not found in cache')
 					all_there = False
 					break
 
 			if all_there:
-				utils.tprint(f'all required expectations found in cache')
+				if params['printing_level'] > 2:
+					utils.tprint(f'all required expectations found in cache')
 				if not params['overwrite_cache']:
+					if params['printing_level'] > 0:
+						utils.tprint(f'expectations loaded from cache ./caches/{filename}')
 					return np.array([cached_expectations_dict[p] for p in operators])
-			
-		utils.tprint('computing expectation values using method '+ params['simulator_method'])
+
+		if params['printing_level'] > 1:
+			utils.tprint('computing expectation values using method '+ params['simulator_method'])
 		computed_expectations = self.computeExpectations(operators, params)
 		computed_expectations_dict = dict(zip(operators, computed_expectations))
 
 		if not new_cache:
-			utils.tprint('checking consistency of newly computed expectation values with old ones')
+			if params['printing_level'] > 2:
+				utils.tprint('checking consistency of newly computed expectation values with old ones')
 			max_difference = np.max(np.abs([cached_expectations_dict[o]-computed_expectations_dict[o] for o in operators if o in cached_expectations_dict]))
 			if max_difference < CACHE_TOLERANCE:
 				cached_expectations_dict.update(computed_expectations_dict)
@@ -635,8 +578,9 @@ class Simulator:
 				if not os.path.exists('./caches/tmp/'):
 					os.mkdir('./caches/tmp/')
 				tmp_file_path = f'./caches/tmp/{filename}'
-				utils.tprint(f'some expectations were not consistent with previously computed expectations (max difference = {max_difference}).'
-					+ f' moving old cache to {tmp_file_path} and overwriting')
+				if params['printing_level'] > 0:
+					utils.tprint(f'some expectations were not consistent with previously computed expectations (max difference = {max_difference}).'
+						+ f' moving old cache to {tmp_file_path} and overwriting')
 				if not os.path.exists('./caches/tmp/'):
 						os.mkdir('./caches/tmp/')
 				os.system(f'cp ./caches/{filename} tmp_file_path')
@@ -678,12 +622,6 @@ class Simulator:
 		H_mb_dag = np.conjugate(H_mb.T)
 		assert np.array_equal(H_mb, H_mb_dag)
 
-		#print('printing pauli generators')
-		#for pauli_string in pauli_generators:
-		#	p = pauliMatrix(pauli_string)
-		#	print(p)
-		#	assert np.array_equal(np.conjugate(p.T), p)
-
 		print('computing state')
 		### compute state
 		if self.beta == np.inf:
@@ -696,10 +634,12 @@ class Simulator:
 
 		print(f'rho.shape = {rho.shape}')
 		out = []
+
 		for p in tqdm(operators):
 			out.append(utils.computeExpectation(p,rho))
 		return np.array(out)
 
+### assumes that operators are in REVERSE alphabetical order
 def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, printing = False, naive = False):
 	if n_threads == 1:
 		if naive:
@@ -734,6 +674,7 @@ def DFScomputeParallel(n, psi, operators, state_type, n_threads, n_chunks, print
 	out = np.concatenate(tuple([x[0] for x in results]))
 	return out, sum([x[1] for x in results]) 
 
+### assumes that operators are in REVERSE alphabetical order
 def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
 	if printing:
 		utils.tprint(f'computing expectation values (single-threaded)')
@@ -745,9 +686,7 @@ def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
 
 	tenpy_calls = 0
 
-	#print(f'running DFSComputeNew with n = {n}, l = {l}')
-
-	###compute R_tensors
+	### compute R_tensors
 	R_tensors = [None]*(n+1)
 	R_tensors[n] = tenpy.linalg.np_conserved.Array.from_ndarray_trivial(np.asarray([[1]]), dtype=complex, labels=['vL', 'vL*'])
 
@@ -766,7 +705,6 @@ def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
 		#if i%(l//100) == 0:
 		#	utils.tprint(f'{i/l:.0%} done')
 		p = operators[i]
-		#j = utils.firstDifferingIndex(p, previous)
 
 		#get the first index that differs from the previous p
 		for j in range(n):
@@ -778,7 +716,6 @@ def DFScomputeSingleThreadPure(n, psi, operators, printing=False):
 		for x in range(n):
 			if p[x] != 'I':
 				last_nontriv = x
-
 
 		y = max(j,last_nontriv)
 
@@ -808,6 +745,7 @@ def DFScomputeSingleThreadNaive(n,psi,operators, printing = False):
 		utils.tprint(f'computing expectation values (naive method)')
 	return np.array([psi.expectation_value_term(pauliStringToTenpyTerm(n,p)) for p in operators]), len(operators)
 
+### assumes that operators are in REVERSE alphabetical order
 def DFScomputeSingleThreadMixed(n, psi, operators, printing=False):
 	if printing:
 		utils.tprint(f'computing expectation values (single-threaded)')
@@ -919,198 +857,11 @@ def tenpyTermToPauliString(n,term):
 def translateTerm(term, i):
 	return [(x[0], x[1]+i) for x in term]
 
-'''
-def buildTerms(n,k):
-	onebody_operators = utils.buildKLocalPaulis1D(n,k, periodic_bc = False)
-	_, threebody_paulis = hamiltonian_learning.buildTripleProductTensor(onebody_operators, onebody_operators)
-	threebody_paulis.sort(key = utils.compressPauli)
-	print(len(threebody_paulis))
-	onebody_terms = [pauliStringToTerm(n,p) for p in onebody_paulis]
-	threebody_terms = [pauliStringToTerm(n,p) for p in threebody_paulis]
-	return onebody_terms, threebody_terms
-'''
-
-twosite_terms = [[(a,0), (b,1)] for (a,b) in itertools.product(tenpy_paulis,tenpy_paulis)]
-threesite_terms = [[(a,0), (b,1), (c,2)] for (a,b,c) in itertools.product(tenpy_paulis,tenpy_paulis,tenpy_paulis)]
-
-#DEPRECATED
-def build2By3CorrelatorList(n):
-	out = []
-	for x,y in itertools.product(twosite_terms, threesite_terms):
-		for i in range(n-1):
-			nonoverlapping_j = [j for j in range(n-2) if j<i-2 or j>i+1]
-			current_paulis = [tenpyTermToPauliString(n, translateTerm(x,i)+translateTerm(y,j)) for j in nonoverlapping_j]
-			for p in current_paulis:
-				if p not in out:
-					out.append(p)
-	return out
-
-#TODO: write. maybe here I can do some multithreading, or something in cython?
-#DEPRECATED
-def batchCompute2by3correlators(n, psis):
-	return
-
-#these are of the form <AB> where A is a 2-local operator, B is a 3-local operator, and A and B don't overlap
-#DEPRECATED
-def compute2by3correlators(n, psi, return_tenpy_calls = False, printing = True):
-	d = {}
-	calls_to_tenpy = 0
-	total_calls_to_tenpy = 2048*(n-4)
-	#### two site term on the left, three-site on the right
-	for x,y in itertools.product(twosite_terms, threesite_terms):
-		for i in range(n-1):
-			nonoverlapping_j = [j for j in range(n-2) if j>i+1]
-			if len(nonoverlapping_j)>0:
-				current_paulis = [tenpyTermToPauliString(n, translateTerm(x,i)+translateTerm(y,j)) for j in nonoverlapping_j]
-				corr = psi.term_correlation_function_right(x, y, i_L=i, j_R=nonoverlapping_j)
-				calls_to_tenpy += 1
-				if calls_to_tenpy%(np.ceil(total_calls_to_tenpy/100))==0 and printing:
-					utils.tprint(f'{calls_to_tenpy/total_calls_to_tenpy:.1%} done')
-				for i in range(len(current_paulis)):
-					d[current_paulis[i]] = corr[i]
-
-	#### three site term on the left, two-site on the right
-	for x,y in itertools.product(threesite_terms, twosite_terms):
-		for i in range(n-2):
-			nonoverlapping_j = [j for j in range(n-1) if j>i+2]
-			if len(nonoverlapping_j)>0:
-				current_paulis = [tenpyTermToPauliString(n, translateTerm(x,i)+translateTerm(y,j)) for j in nonoverlapping_j]
-				corr = psi.term_correlation_function_right(x, y, i_L=i, j_R=nonoverlapping_j)
-				calls_to_tenpy += 1
-				if calls_to_tenpy%(np.ceil(total_calls_to_tenpy/100))==0 and printing:
-					utils.tprint(f'{calls_to_tenpy/total_calls_to_tenpy:.1%} done')
-				for i in range(len(current_paulis)):
-					d[current_paulis[i]] = corr[i]
-	if return_tenpy_calls:
-		return d, calls_to_tenpy
-	else:
-		return d
-
-### DEPRECATED
-def allTerms(k):
-	return [[(x[i],i) for i in range(k)] for x in itertools.product(tenpy_paulis, repeat = k)]
-
-### DEPRECATED
-def computeCorrelators(n, k,l, psi, return_tenpy_calls = False, printing = True):
-	d = {}
-	calls_to_tenpy = 0
-
-	if k == l:
-		total_calls_to_tenpy = (n-k-l+1)*(4**(k+l))
-	else:
-		total_calls_to_tenpy = 2*(n-k-l+1)*(4**(k+l))
-
-	k_site_terms = allTerms(k)
-	l_site_terms = allTerms(l)
-
-	#### k-site term on the left, l-site term on the right
-	for x,y in itertools.product(k_site_terms, l_site_terms):
-		for i in range(n-k+1):
-			nonoverlapping_j = [j for j in range(n-l+1) if j>i+k-1]
-			if len(nonoverlapping_j)>0:
-				current_paulis = [tenpyTermToPauliString(n, translateTerm(x,i)+translateTerm(y,j)) for j in nonoverlapping_j]
-				corr = psi.term_correlation_function_right(x, y, i_L=i, j_R=nonoverlapping_j)
-				calls_to_tenpy += 1
-				if calls_to_tenpy%(np.ceil(total_calls_to_tenpy/1000))==0 and printing:
-					utils.tprint(f'{calls_to_tenpy/total_calls_to_tenpy:.1%} done')
-				for i in range(len(current_paulis)):
-					d[current_paulis[i]] = corr[i]
-	if k != l:
-		#### l-site term on the left, k-site term on the right
-		for x,y in itertools.product(l_site_terms, k_site_terms):
-			for i in range(n-l+1):
-				nonoverlapping_j = [j for j in range(n-k+1) if j>i+l-1]
-				if len(nonoverlapping_j)>0:
-					current_paulis = [tenpyTermToPauliString(n, translateTerm(x,i)+translateTerm(y,j)) for j in nonoverlapping_j]
-					corr = psi.term_correlation_function_right(x, y, i_L=i, j_R=nonoverlapping_j)
-					calls_to_tenpy += 1
-					if calls_to_tenpy%(np.ceil(total_calls_to_tenpy/100))==0 and printing:
-						utils.tprint(f'{calls_to_tenpy/total_calls_to_tenpy:.1%} done')
-					for i in range(len(current_paulis)):
-						d[current_paulis[i]] = corr[i]
-
-	if return_tenpy_calls:
-		return d, calls_to_tenpy
-	else:
-		return d
-
-#given kth vector in computational basis, compute its image under translation
-def rotateBasis(k,n):
-	bitstring = format(k, '0{}b'.format(n))#converting to binary
-	bitstring_rotated = bitstring[1:]+b[0]
-	return int(bitstring_rotated,2)#converting back to int
-
-#sparse matrix corresponding to lattice translation
-def generateRotationMatrix(n):
-	data = np.ones(2**n)
-	rows = [rotateBasis(k,n) for k in range(2**n)]
-	cols= range(2**n)
-	out = scipy.sparse.coo_array(data,(rows,cols))
-	return out
-
 def generatePauliMatrix(pauli_string):
 	pauli_list = [scipy.sparse.coo_array(pauli_generators[c]) for c in pauli_string]
 	return ft.reduce(scipy.sparse.kron, pauli_list)
 
-def onsitePauliString(i, pauli, N):
-	return 'I'*i + pauli + 'I'*(N-i-1)
-
-def twoSitePauliString(i,j, pauli_1, pauli_2, N):
-	assert i != j
-	if i > j:
-		(i,j) = (j,i)
-		(pauli_1,pauli_2) = (pauli_2,pauli_1)
-	out = 'I'*i + pauli_1 + 'I'*(j-i-1) + pauli_2 + 'I'*(N-j-1)
-	return out
-
-def threeSitePauliString(i,j,k, pauli_1, pauli_2, pauli_3, N):
-	assert i != j != k
-	(i,pauli_1), (j,pauli_2), (k,pauli_3) = sorted(((i,pauli_1), (j,pauli_2), (k,pauli_3)))
-	out = 'I'*i + pauli_1 + 'I'*(j-i-1) + pauli_2 + 'I'*(k-j-1) + pauli_3 + 'I'*(N-k-1)
-	return out
-
-def exactDiagonalization(n,paulis,coefficients, return_spectrum = False):
-	#build Hamiltonian
-	H = scipy.sparse.coo_array((2**n,2**n))
-	assert len(paulis) == len(coefficients)
-
-	for i in range(len(paulis)):
-		if len(paulis[i]) != n:
-			raise ValueError(f'{paulis[i]} is not the correct length, expected {n}')
-		H += coefficients[i]*generatePauliMatrix(paulis[i])
-
-	if return_spectrum == False:
-		if n == 1:
-			_, psi = scipy.linalg.eigh(H.toarray())
-		else:
-			_, psi = scipy.sparse.linalg.eigsh(H, k=1, which='SA')
-			#_, psi = scipy.linalg.eigh(H.toarray())
-		psi = psi[:,0]
-		return psi
-
-	else:
-		eigvals, eigvectors = scipy.linalg.eigh(H.toarray())
-		psi = eigvectors[:,0]
-		return psi, eigvals
-
-def signFromSupport(n,support):
-	total = 0
-	for i in range(2**n):
-		if support[i]:
-			pass
-
-#given a state as a full wavefunction, compute expectation of a given operator
-def computeExpectationFromWaveFunc(pauli_string, psi, n):
-	support_bitstring = utils.supportBitString(pauli_string)
-	support_bitstring_int = int(support_bitstring,2)
-	U = utils.generateCliffordMatrix(pauli_string)
-	weights = np.square(np.absolute(U@psi))
-	#signs = np.ones(2**n) - 2*np.bitwise_count(np.bitwise_and(support_bitstring_int,np.arange(2**n)))# for when numpy 2.0 comes out
-	signs = np.ones(2**n) - [2*(x.bit_count()%2) for x in np.bitwise_and(support_bitstring_int,np.arange(2**n))]
-	out = np.dot(signs, weights)
-	return out
-
-#given a (left-justified) pauli returns all its translates
+### given a (left-justified) pauli returns all its translates
 def translates(n, pauli, periodic_bc):
 	assert n>0
 	assert pauli[0] != 'I'
@@ -1134,65 +885,20 @@ def translates(n, pauli, periodic_bc):
 				pauli_translates.append(pauli_rotated)
 
 	return pauli_translates
-'''
-### DEPRECATED
-def addTranslates(n, paulis, coefficients, periodic_bc):
-	paulis_translates = paulis
-	l = len(paulis)
-	paulis_translates_set = set(paulis)
-	coefficients_translates = coefficients
 
-	#we depend on this assumption
-	for i in range(l):
-		assert paulis[i][0] != 'I'
+#given kth vector in computational basis, compute its image under translation
+def rotateBasis(k,n):
+	bitstring = format(k, '0{}b'.format(n))#converting to binary
+	bitstring_rotated = bitstring[1:]+b[0]
+	return int(bitstring_rotated,2)#converting back to int
 
-	if periodic_bc:
-		for i in range(1,n):
-			for j in range(l):
-				pauli_rotated = paulis[j][i:] + paulis[j][:i] 
-				if pauli_rotated in paulis_translates_set:
-					print(f'warning: duplicate found when constructing translation-invariant hamiltonian: {pauli_rotated}')
-				else:
-					paulis_translates_set.add(pauli_rotated)
-					paulis_translates.append(pauli_rotated)
-					coefficients_translates.append(coefficients[j])
-	else:
-		for i in range(1,n):
-			for j in range(l):
-				pauli_rotated = paulis[j][i:] + paulis[j][:i] 
-				if pauli_rotated[0]=='I':
-					if pauli_rotated in paulis_translates_set:
-						print(f'warning: duplicate found when constructing translation-invariant hamiltonian: {pauli_rotated}')
-					else:
-						paulis_translates_set.add(pauli_rotated)
-						paulis_translates.append(pauli_rotated)
-						coefficients_translates.append(coefficients[j])
-
-	return paulis_translates, coefficients_translates
-'''
-
-def scatterPlot(l, label = None):
-	r = range(len(l))
-	fig = plt.figure()
-	ax1 = fig.add_subplot(111)
-	ax1.scatter(r, l , s=2, c='b', marker="s", label = label)
-	plt.show()
-
-###DEPRECTAED
-def saveState(n,psi, periodic, filename, dir = './states/'):
-	assert len(psi) == 2**n
-	with open(dir+filename, 'w') as f:
-		f.write(str(n)+'\n')
-		'''
-		if periodic:
-			f.write('periodic : 1\n')
-		else:
-			f.write('periodic : 0\n')
-		'''
-		re_psi = np.real(psi)
-		im_psi = np.imag(psi)
-		for i in range(2**n):
-			f.write(str(re_psi[i]) + ' ' + str(im_psi[i]) + '\n')
+#sparse matrix corresponding to lattice translation
+def generateRotationMatrix(n):
+	data = np.ones(2**n)
+	rows = [rotateBasis(k,n) for k in range(2**n)]
+	cols= range(2**n)
+	out = scipy.sparse.coo_array(data,(rows,cols))
+	return out
 
 def checkTranslationInvariance(n,H, psi, threshold = 1e-10, printing = True):
 	R = generateRotationMatrix(n)
@@ -1208,7 +914,7 @@ def checkTranslationInvariance(n,H, psi, threshold = 1e-10, printing = True):
 
 	return H_equality, psi_equality
 
-#converts a string of the form "key_1 : val_1, key_2 : val_2" to a dict
+### converts a string of the form "key_1 : val_1, key_2 : val_2" to a dict
 def stringToDict(s):
 	d = {}
 	s_split = s.split(', ')
@@ -1219,12 +925,19 @@ def stringToDict(s):
 	return d
 
 identity = lambda x : x 
-#keys are expected parameters and values are the function used to parse the corresponding value
+def strToBool(s):
+	if s == 'True' or s == 'T' or s == 't' or s == '1':
+		return True
+	elif s == 'False' or s == 'F' or s == 'f' or s == '0':
+		return False
+	else:
+		raise ValueError
+### keys are parameters loaded in loadHamiltonian function and values are the function used to parse the corresponding value
 param_conversions = {
 					'n' : int,
 					'k' : int,				
-					'translation_invariant' : utils.strToBool,
-					'periodic' : utils.strToBool,
+					'translation_invariant' : strToBool,
+					'periodic' : strToBool,
 					'locality' : identity
 					}
 
@@ -1293,18 +1006,6 @@ def loadHamiltonian(filename):
 
 	return params_dict
 
-#Hamiltonian is described by paulis_in and coefficients_in
-#DEPRECATED
-def computeGroundstate1D(n, paulis, coefficients, method = 'exact_diagonalization'):
-	if method == 'exact_diagonalization':
-		psi = exactDiagonalization(n,paulis,coefficients)
-		out = lambda paulis : [computeExpectationFromWaveFunc(p,psi,n) for p in paulis]
-	elif method == 'DMRG':
-		out = computeGroundstateDMRG(n,paulis, coefficients)
-	else:
-		raise ValueError
-	return out
-
 def computeGroundstateDMRG(H, simulator_params):
 	n = H.n
 	ham_terms_tenpy = [pauliStringToTenpyTerm(n,pauli) for pauli in H.terms]
@@ -1361,27 +1062,3 @@ def computeThermalStateByPurification(H, beta_max, simulator_params, final_state
 		return psi
 	else:
 		return betas, psis
-
-#can be called from command line to generate a state and spit out a list of expectations.
-#TODO: DELETE THIS?
-if __name__ == '__main__':
-	#python3 state_simulator.py 9 transverse_ising.txt out.txt -t -p  
-
-	parser = argparse.ArgumentParser()
-	parser.add_argument('n')
-	parser.add_argument('hamiltonian_filename')
-	parser.add_argument('-o', '--output_filename', help = 'default is hamiltonian_filename + _groundstate.txt')
-	#parser.add_argument('-t', '--trans', action = 'store_true', help = 'is the input hamiltonian translation invariant')
-	#parser.add_argument('-p', '--periodic', action = 'store_true', help = 'if translation-invariant, is it periodic')
-	args_dict = vars(parser.parse_args())
-	translation_invariant = args_dict['trans']
-	periodic =  args_dict['periodic']
-	n = int(args_dict['n'])
-	if args_dict['output_filename'] is None:
-		output_filename = args_dict['hamiltonian_filename'] + '_groundstate.txt'
-	else:
-		output_filename = args_dict['output_filename']
-
-	H_paulis, H_coefficients, H_params = loadHamiltonian(args_dict['hamiltonian_filename'])
-	psi = computeGroundstate1D(n, H_paulis, H_coefficients)
-	saveState(n,psi, H_params['periodic'], output_filename)
