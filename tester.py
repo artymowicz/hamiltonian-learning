@@ -286,7 +286,7 @@ if __name__ == '__main__':
 		params['simulator_dt'] = args.simulator_dt
 	if args.n is not None:
 		params['n'] = args.n
-	if args.w_thresh is not None:
+	if args.eps_W is not None:
 		params['epsilon_W'] = args.eps_W
 	if args.unoise is not None:
 		params['uniform_noise'] = args.unoise
