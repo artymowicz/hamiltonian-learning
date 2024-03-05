@@ -418,19 +418,22 @@ class Simulator:
 			if round(betas[-1],10) != round(self.beta,10):
 				utils.tprint(f'warning: highest beta was not computed betas[-1] = {betas[-1]}, self.beta = {self.beta}')
 
-			utils.tprint('saving states')
+			if params['printing_level'] > 1:
+				utils.tprint('saving states')
 			if not os.path.exists(cache_directory):
 					os.mkdir(cache_directory)
 
 			for i in range(len(betas)):
 				save_path = cache_directory + f"{self.H_name}__b={betas[i]:.10f}__state.hdf5"
 				if True:#round(betas[i]%BETA_SAVE_INTERVAL,10) in (0, BETA_SAVE_INTERVAL):
-					utils.tprint(f'saving ' + save_path)
+					if params['printing_level'] > 2:
+						utils.tprint(f'saving ' + save_path)
 					self.saveTenpyMPS(save_path, psis[i], params)
 			return psis[-1]
 		else:
 			psi = self.computeEquilibriumStateMPS(params, return_intermediate_results = False)
-			utils.tprint('saving state')
+			if params['printing_level'] > 1:
+				utils.tprint('saving state')
 			if not os.path.exists(cache_directory):
 					os.mkdir(cache_directory)
 
@@ -595,8 +598,8 @@ class Simulator:
 			sort_indices = np.argsort(operators)
 			total_operators = operators[sort_indices]
 			total_expectations = computed_expectations[sort_indices]
-				
-		utils.tprint(f'saving new expectation values in ./caches/{filename}')
+		if params['printing_level'] > 1:
+			utils.tprint(f'saving new expectation values in ./caches/{filename}')
 		with h5py.File(f'./caches/' + filename, 'r+') as cache:
 
 			if 'operators' in cache[f'expectations'].keys():
