@@ -566,7 +566,7 @@ class Simulator:
 						utils.tprint(f'expectations loaded from cache ./caches/{filename}')
 					return np.array([cached_expectations_dict[p] for p in operators])
 
-		if params['printing_level'] > 1:
+		if params['printing_level'] > 2:
 			utils.tprint('computing expectation values using method '+ params['simulator_method'])
 		computed_expectations = self.computeExpectations(operators, params)
 		computed_expectations_dict = dict(zip(operators, computed_expectations))
