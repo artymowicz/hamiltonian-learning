@@ -382,10 +382,12 @@ class Simulator:
 		if params['MPS_overwrite_cache'] == False:
 			loading = False
 			if not os.path.exists(cache_path):
-				utils.tprint(f'mps cache {cache_filename} not found')
+				if params['printing_level'] > 1:
+					utils.tprint(f'mps cache {cache_filename} not found')
 			else:
-				utils.tprint(f'mps cache {cache_filename} found')
-
+				if params['printing_level'] > 1:
+					utils.tprint(f'mps cache {cache_filename} found')
+				
 				passed_sanity_check = False
 				with h5py.File(cache_path, 'r') as f:
 					if False: ### TODO: put some sanity checks here if needed
@@ -523,7 +525,8 @@ class Simulator:
 				os.replace(f'./caches/{filename}', tmp_file_path)
 			
 		if new_cache:
-			utils.tprint(f'creating expectations cache {filename}')
+			if params['printing_level'] > 1:
+				utils.tprint(f'creating expectations cache {filename}')
 			with h5py.File(f'./caches/{filename}', 'w') as exp_file:
 				exp_file['/hamiltonian/terms'] = np.char.encode(self.H.terms)
 				exp_file['/hamiltonian/coeffs'] = self.H.coefficients

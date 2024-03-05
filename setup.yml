@@ -1,6 +1,6 @@
 ## parameters of physical system
 hamiltonian_filename: xxz
-n: 10
+n: 5
 periodic: False
 coupling_constants: #fixed values of coupling constants
   g: 1.0
