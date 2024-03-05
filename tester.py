@@ -29,16 +29,17 @@ def printLearningResults(run_data, params):
 	print(f'learned T = {T_learned:.10e}')
 	print(f'mu = {mu:.10e}')
 	print(f'reconstruction error (theta) = {theta}')
-	print()
-	line = 'term' + ' '*(4*max_weight-1) +':   orig coeff  :   learned coeff'
-	print(line)
-	print('-'*len(line))
-	for i in range(len(terms)):
-			if max(np.abs(in_coeffs[i]),np.abs(learned_coeffs[i])) > 1e-8:
-				print(f'{utils.compressPauli(terms[i])}' +
-					' '*(4*max_weight - len(utils.compressPauli(terms[i])) + 2) +
-					f' :  {in_coeffs[i]:+.8f}  :  {learned_coeffs[i]:+.8f}')
-	print()
+	if params['printing_level']>2:
+		print()
+		line = 'term' + ' '*(4*max_weight-1) +':   orig coeff  :   learned coeff'
+		print(line)
+		print('-'*len(line))
+		for i in range(len(terms)):
+				if max(np.abs(in_coeffs[i]),np.abs(learned_coeffs[i])) > 1e-8:
+					print(f'{utils.compressPauli(terms[i])}' +
+						' '*(4*max_weight - len(utils.compressPauli(terms[i])) + 2) +
+						f' :  {in_coeffs[i]:+.8f}  :  {learned_coeffs[i]:+.8f}')
+		print()
 
 def saveLearningResults(run_data, params):
 	T_in = run_data['T_in_normalized']

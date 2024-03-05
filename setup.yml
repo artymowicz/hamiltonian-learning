@@ -36,7 +36,7 @@ expectations_skip_checks: False #skips doing sanity checks on cache for a slight
 expectations_naive_compute: False #a slow way of computing expectation values used in debugging
 
 ## parameters relating to adding measurement noise
-add_noise: False #adding simulated measurement noise
+add_noise: True #adding simulated measurement noise
 uniform_noise: 1.e-5 #uniform noise amplitude (sigma_noise in the paper)
 ST_measurements: null #number of simulated shadow tomography measurements (m in the paper)
 
@@ -49,5 +49,5 @@ T_constraint: T>0
 
 ## miscellaneous parameters
 skip_plotting: False
-printing_level: 1
+printing_level: 2
 no_save: False #skip creating a run directory and saving results there
