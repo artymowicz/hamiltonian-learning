@@ -382,10 +382,10 @@ class Simulator:
 		if params['MPS_overwrite_cache'] == False:
 			loading = False
 			if not os.path.exists(cache_path):
-				if params['printing_level'] > 1:
+				if params['printing_level'] > 2:
 					utils.tprint(f'mps cache {cache_filename} not found')
 			else:
-				if params['printing_level'] > 1:
+				if params['printing_level'] > 2:
 					utils.tprint(f'mps cache {cache_filename} found')
 				
 				passed_sanity_check = False
@@ -528,7 +528,7 @@ class Simulator:
 				os.replace(f'./caches/{filename}', tmp_file_path)
 			
 		if new_cache:
-			if params['printing_level'] > 1:
+			if params['printing_level'] > 2:
 				utils.tprint(f'creating expectations cache {filename}')
 			with h5py.File(f'./caches/{filename}', 'w') as exp_file:
 				exp_file['/hamiltonian/terms'] = np.char.encode(self.H.terms)
@@ -598,7 +598,7 @@ class Simulator:
 			sort_indices = np.argsort(operators)
 			total_operators = operators[sort_indices]
 			total_expectations = computed_expectations[sort_indices]
-		if params['printing_level'] > 1:
+		if params['printing_level'] > 2:
 			utils.tprint(f'saving new expectation values in ./caches/{filename}')
 		with h5py.File(f'./caches/' + filename, 'r+') as cache:
 
