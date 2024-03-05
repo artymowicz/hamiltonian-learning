@@ -215,7 +215,7 @@ def tester(params):
 	r = len(onebody_operators)
 	s = len(hamiltonian_terms)
 	J = np.eye(r, dtype = complex)
-	epsilon_W = params['W_eigval_threshold']
+	epsilon_W = params['eps_W']
 	printing_level = params['printing_level']
 	args = (r, s, hamiltonian_terms_expectations, J, C, F.indices, F.values, epsilon_W, printing_level)
 
