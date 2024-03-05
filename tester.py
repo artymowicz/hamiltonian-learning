@@ -264,12 +264,9 @@ if __name__ == '__main__':
 	parser.add_argument('-g', type = float)
 	parser.add_argument('-b', '--beta', type = float)
 	parser.add_argument('-dt', '--simulator_dt', type = float)
-	parser.add_argument('-mu', type = float)
 	parser.add_argument('--unoise', type = float)
-	parser.add_argument('-o', '--objective')
 	parser.add_argument('-n', type = int)
-	parser.add_argument('-wt','--w_thresh', type = float) 
-	parser.add_argument('-ct','--c_thresh', type = float)
+	parser.add_argument('-ew','--eps_W', type = float) 
 	parser.add_argument('--st_meas', type = float)
 	parser.add_argument('--n_runs', type = int, default = 1)
 	parser.add_argument('-d', '--disorder', type = float)
@@ -287,16 +284,10 @@ if __name__ == '__main__':
 		params['beta'] = args.beta
 	if args.simulator_dt is not None:
 		params['simulator_dt'] = args.simulator_dt
-	if args.objective is not None:
-		params['objective'] = args.objective
 	if args.n is not None:
 		params['n'] = args.n
-	if args.mu is not None:
-		params['mu'] = args.mu
 	if args.w_thresh is not None:
-		params['W_eigval_threshold'] = args.w_thresh
-	if args.c_thresh is not None:
-		params['C_eigval_threshold'] = args.c_thresh
+		params['epsilon_W'] = args.eps_W
 	if args.unoise is not None:
 		params['uniform_noise'] = args.unoise
 	if args.st_meas is not None:
