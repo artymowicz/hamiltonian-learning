@@ -36,16 +36,13 @@ expectations_skip_checks: False #skips doing sanity checks on cache for a slight
 expectations_naive_compute: False #a slow way of computing expectation values used in debugging
 
 ## parameters relating to adding measurement noise
-add_noise: True #adding simulated measurement noise
+add_noise: False #adding simulated measurement noise
 uniform_noise: 1.e-5 #uniform noise amplitude (sigma_noise in the paper)
 ST_measurements: null #number of simulated shadow tomography measurements (m in the paper)
 
 ## parameters for convex optimization
 solver: MOSEK
-objective: mu
-C_eigval_threshold: 0 #eigenvalue threshold for C matrix (important when omega is not faithful or nearly not faithful)
-W_eigval_threshold: 1.e-4 #eigenvalue threshold for W matrix
-T_constraint: T>0
+epsilon_W: 1.e-4 #determines eigenvalue threshold for W matrix
 
 ## miscellaneous parameters
 skip_plotting: False
