@@ -225,7 +225,11 @@ def tester(params):
 	r = len(onebody_operators)
 	s = len(hamiltonian_terms)
 	J = np.eye(r, dtype = complex)
-	epsilon_W = 400*np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2)
+	if params['add_noise']:
+		epsilon_W = max(400*np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2), 1e-15)
+	else:
+		epsilon_W = 400*1.11e-16 # 1.11e-16 here is a stand-in for 64-bit machine epsilon
+
 	printing_level = params['printing_level']
 	args = (r, s, hamiltonian_terms_expectations, J, C, F.indices, F.values, epsilon_W, printing_level)
 
