@@ -29,8 +29,10 @@ def printLearningResults(run_data, params):
 	print(f'learned T = {T_learned:.10e}')
 	print(f'mu = {mu:.10e}')
 	print(f'reconstruction error (theta) = {theta}')
+	print()
+
 	if params['printing_level']>2:
-		print()
+		
 		line = 'term' + ' '*(4*max_weight-1) +':   orig coeff  :   learned coeff'
 		print(line)
 		print('-'*len(line))
@@ -58,9 +60,18 @@ def saveLearningResults(run_data, params):
 		save_dir = utils.createSaveDirectory()
 
 	H_in.saveToYAML(f"{save_dir}/{n}_{params['hamiltonian_filename']}.yml")
+	H_learned.saveToYAML(f"{save_dir}/learned_hamiltonian.yml")
 
-	with open(save_dir + '/metrics_and_params.yml', 'w') as f:
-		yaml.dump(dict(metrics = run_data['metrics'], params = params), f, default_flow_style=False)
+	with open(save_dir + '/data.yml', 'w') as f:
+		d = dict(metrics = run_data['metrics'], 
+			params = params, 
+			T_in_normalized = float(run_data['T_in_normalized']),
+			T_in = float(run_data['T_in']),
+			T_learned = float(run_data['T_learned']),
+			mu = float(run_data['mu']),
+			q = int(run_data['q']),
+			theta = float(run_data['theta']))
+		yaml.dump(d, f, default_flow_style=False)
 
 	max_weight = max([utils.weight(p) for p in terms])
 	l = len(terms)
@@ -107,7 +118,6 @@ def generateOperators(params):
 	threebody_operators = utils.buildThreeBodyTerms(onebody_operators, hamiltonian_terms)
 
 	if params['printing_level'] > 2:
-		utils.tprint(f'n = 5')
 		utils.tprint(f'number of three-body terms: {len(threebody_operators)}')
 
 	### we do not want the identity to be a Hamiltonian term
@@ -215,7 +225,7 @@ def tester(params):
 	r = len(onebody_operators)
 	s = len(hamiltonian_terms)
 	J = np.eye(r, dtype = complex)
-	epsilon_W = params['epsilon_W']
+	epsilon_W = 400*np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2)
 	printing_level = params['printing_level']
 	args = (r, s, hamiltonian_terms_expectations, J, C, F.indices, F.values, epsilon_W, printing_level)
 

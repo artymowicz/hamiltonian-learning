@@ -67,9 +67,8 @@ def learnHamiltonianFromThermalState(r: int, s: int, h_terms_exp: np.ndarray, J:
 	### computing the matrix S, whose columns form an orthonormal basis of the (approximate) null space of W
 	W_eigvals, W_eigvecs = scipy.linalg.eigh(W)
 	q = 0
-	W_eigval_cutoff = epsilon_W*np.mean(W_eigvals[:s//2])#*np.exp(np.mean(np.log(W_eigvals)))
 	while q < s:
-		if W_eigvals[q] > W_eigval_cutoff:
+		if W_eigvals[q] > epsilon_W:
 			break
 		else:
 			q += 1
@@ -78,9 +77,9 @@ def learnHamiltonianFromThermalState(r: int, s: int, h_terms_exp: np.ndarray, J:
 		for i in range(10):
 			utils.tprint(f'  {W_eigvals[i]:.4e}')
 	if q < 1 :
-		raise ValueError(f'all W eigenvalues are above the cutoff {W_eigval_cutoff}')
+		raise ValueError(f'all W eigenvalues are above the cutoff {epsilon_W}')
 	if printing_level > 1:
-		utils.tprint(f'W eigenvalue threshold = {W_eigval_cutoff}')
+		utils.tprint(f'W eigenvalue threshold = {epsilon_W}')
 	if printing_level > 1:
 		utils.tprint(f'approximate kernel of W has dimension {q}')
 	S = W_eigvecs[:,:q] 
