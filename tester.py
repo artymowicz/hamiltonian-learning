@@ -226,7 +226,7 @@ def tester(params):
 	s = len(hamiltonian_terms)
 	J = np.eye(r, dtype = complex)
 	if params['add_noise']:
-		epsilon_W = max(400*np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2), 1e-15)
+		epsilon_W = max(400*np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2), 1e-12)
 	else:
 		epsilon_W = 400*1.11e-16 # 1.11e-16 here is a stand-in for 64-bit machine epsilon
 
