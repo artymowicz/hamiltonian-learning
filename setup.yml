@@ -18,7 +18,7 @@ H_locality: short_range #when this is "short_range", the hamiltonian terms are a
 H_range: 0 #when H_locality = "long_range", hamiltonian terms are all products of two geometrically k_H-local Paulis localized at most "H_range" apart
 
 ## parameters for computing equilibrium state
-simulator_method: tenpy # either 'tenpy' or 'ED'
+simulator_method: tenpy #either 'tenpy' or 'ED'
 
 simulator_dt: 1.e-3     # 
 simulator_order: 2      # these are parameters used in computing the Gibbs state via MPS methods. Based on https://tenpy.readthedocs.io/en/latest/examples/purification.html
@@ -28,7 +28,7 @@ MPS_no_cache: False #skip loading and saving cached Gibbs state (as a purified M
 MPS_overwrite_cache: False #overwrite existing MPS cache if it exists
 MPS_avoid_overwrite: True #avoid overwriting a cached MPS if it was computed using a smaller dt
 
-## parameters for computing expectations #TODO: rename these, prepending "expectations_"
+## parameters for computing expectations
 expectations_n_threads: 4
 expectations_no_cache: False #skip loading and saving cached expectation values of gibbs states used for testing
 expectations_overwrite_cache: False #overwrite existing cache of expectation values if it exists
@@ -36,13 +36,13 @@ expectations_skip_checks: False #skips doing sanity checks on cache for a slight
 expectations_naive_compute: False #a slow way of computing expectation values used in debugging
 
 ## parameters relating to adding measurement noise
-add_noise: False #adding simulated measurement noise
+add_noise: True #adding simulated measurement noise
 uniform_noise: 1.e-5 #uniform noise amplitude (sigma_noise in the paper)
-ST_measurements: null #number of simulated shadow tomography measurements (m in the paper)
+ST_measurements: 0 #number of simulated shadow tomography measurements (m in the paper). If 0, don't add ST measurement noise
 
 ## parameters for convex optimization
+epsilon_W_prefactor: 400.0
 solver: MOSEK
-epsilon_W: 1.e-4 #determines eigenvalue threshold for W matrix
 
 ## miscellaneous parameters
 skip_plotting: False

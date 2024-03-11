@@ -315,12 +315,14 @@ class Simulator:
 		if params['simulator_method'] == 'tenpy':
 			t1 = time.time()
 			if self.beta == np.inf:
-				utils.tprint('computing state using DMRG')
+				if params['printing_level'] > 1:
+					utils.tprint('computing ground state')
 				psi = computeGroundstateDMRG(self.H, params)
 				t2 = time.time()
 				self.metrics['rho_computation_time_by_DMRG'] = t2-t1
 			else:
-				utils.tprint('computing state using purification')
+				if params['printing_level'] > 0:
+					utils.tprint('computing thermal state')
 				betas, psis = computeThermalStateByPurification(self.H, self.beta, params)
 				psi = psis[-1]
 				t2 = time.time()
@@ -418,7 +420,7 @@ class Simulator:
 			if round(betas[-1],10) != round(self.beta,10):
 				utils.tprint(f'warning: highest beta was not computed betas[-1] = {betas[-1]}, self.beta = {self.beta}')
 
-			if params['printing_level'] > 1:
+			if params['printing_level'] > 2:
 				utils.tprint('saving states')
 			if not os.path.exists(cache_directory):
 					os.mkdir(cache_directory)
@@ -455,6 +457,9 @@ class Simulator:
 				state_type = 'pure'
 			else:
 				state_type = 'mixed'
+
+			if params['printing_level'] > 0:
+				utils.tprint('computing expectation values')
 
 			### we flip the list of operators when passing to DFSComputeParallel because it requires the list to be in reverse alphabetical order
 			args = (self.n, self.psi, np.flip(operators), state_type, params['expectations_n_threads'], n_chunks)
@@ -566,8 +571,6 @@ class Simulator:
 						utils.tprint(f'expectations loaded from cache ./caches/{filename}')
 					return np.array([cached_expectations_dict[p] for p in operators])
 
-		if params['printing_level'] > 2:
-			utils.tprint('computing expectation values using method '+ params['simulator_method'])
 		computed_expectations = self.computeExpectations(operators, params)
 		computed_expectations_dict = dict(zip(operators, computed_expectations))
 
@@ -598,8 +601,10 @@ class Simulator:
 			sort_indices = np.argsort(operators)
 			total_operators = operators[sort_indices]
 			total_expectations = computed_expectations[sort_indices]
+
 		if params['printing_level'] > 2:
 			utils.tprint(f'saving new expectation values in ./caches/{filename}')
+
 		with h5py.File(f'./caches/' + filename, 'r+') as cache:
 
 			if 'operators' in cache[f'expectations'].keys():
@@ -628,7 +633,6 @@ class Simulator:
 		H_mb_dag = np.conjugate(H_mb.T)
 		assert np.array_equal(H_mb, H_mb_dag)
 
-		print('computing state')
 		### compute state
 		if self.beta == np.inf:
 			_, eigvecs = scipy.linalg.eigh(H_mb)
@@ -640,7 +644,7 @@ class Simulator:
 
 		print(f'rho.shape = {rho.shape}')
 		out = []
-
+		
 		for p in tqdm(operators):
 			out.append(utils.computeExpectation(p,rho))
 		return np.array(out)

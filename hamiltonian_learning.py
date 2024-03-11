@@ -45,7 +45,7 @@ def learnHamiltonianFromThermalState(r: int, s: int, h_terms_exp: np.ndarray, J:
 	C_eigvals, C_eigvecs = scipy.linalg.eigh(C)
 
 	small = 1e-9 
-	very_small = 1e-11
+	very_small = 1e-15
 
 	if C_eigvals[0] < very_small:
 		raise ValueError('covariance matrix is singular. The given expectation values do not correspond to a Gibbs state')
@@ -96,16 +96,15 @@ def learnHamiltonianFromThermalState(r: int, s: int, h_terms_exp: np.ndarray, J:
 	
 	Delta_eigvals = scipy.linalg.eigvalsh(Delta)
 
-	'''
 	if Delta_eigvals[0] < very_small:
 		raise valueError('modular operator is singular. The given expectation values do not correspond to a Gibbs state')
 	elif Delta_eigvals[0] < small:
 		utils.tprint('WARNING: Modular operator is near singular')
-	'''
+	
 
 	logDelta = scipy.linalg.logm(Delta)
 
-	if printing_level > 1:
+	if printing_level > 0:
 		utils.tprint('learning Hamiltonian')
 
 	with Model() as M:

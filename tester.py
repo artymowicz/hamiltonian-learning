@@ -31,8 +31,7 @@ def printLearningResults(run_data, params):
 	print(f'reconstruction error (theta) = {theta}')
 	print()
 
-	if params['printing_level']>2:
-		
+	if params['printing_level']>3:
 		line = 'term' + ' '*(4*max_weight-1) +':   orig coeff  :   learned coeff'
 		print(line)
 		print('-'*len(line))
@@ -176,15 +175,13 @@ def tester(params):
 
 	if params['add_noise']:
 		if  params['printing_level'] > 2:
-			utils.tprint('adding noise')
-		if params['ST_measurements'] is not None:
+			utils.tprint('adding noise to expectation values')
+		if params['ST_measurements'] != 0:
 			noise = simulateShadowTomographyNoise(threebody_operators, threebody_expectations, params['ST_measurements'])
 			threebody_expectations += noise
 		if params['uniform_noise']:
 			threebody_expectations += params['uniform_noise']*np.random.normal(size=len(threebody_expectations))
 
-	if  params['printing_level'] > 2:
-		utils.tprint('creating expectations dict')
 	expectations_dict = dict(zip(threebody_operators,threebody_expectations))
 
 	if  params['printing_level'] > 2:
@@ -208,27 +205,25 @@ def tester(params):
 		utils.tprint('building F tensor')
 
 	triple_product_tensor = triple_product_tensor.transpose([0,2,1,3])#we want the Hamiltonian index to be second-last
-	F = triple_product_tensor.contractRight(threebody_expectations)#F_ijk = <a_i[h_k,a_j]> (note the order of indices)
+	F = triple_product_tensor.contractRight(threebody_expectations)#F_ijk = <b_i[h_k,b_j]> (note the order of indices)
 
 	if params['printing_level'] > 2:
 		utils.tprint(f'F tensor has {len(F.values)} nonzero entries')
 
 	if  params['printing_level'] > 2:
 		utils.tprint('computing covariance matrix C')
-	C = mult_tensor.contractRight(twobody_expectations).toNumpy()#C_ij = <a_ia_j>
+	C = mult_tensor.contractRight(twobody_expectations).toNumpy()#C_ij = <b_ib_j>
 
 	###----- we call the hamiltonian learning algorithm here -----###
-
-	if params['printing_level'] > 0:
-		utils.tprint('starting Hamiltonian learning')
-
 	r = len(onebody_operators)
 	s = len(hamiltonian_terms)
 	J = np.eye(r, dtype = complex)
+
+	### this formula for epsilon_W was determined empirically
 	if params['add_noise']:
-		epsilon_W = 400*max(np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2), 1e-11)
+		epsilon_W = params['epsilon_W_prefactor']*max(np.sqrt(len(threebody_operators))*((params['uniform_noise'])**2), 1e-11)
 	else:
-		epsilon_W = 400*1e-11 # 1.11e-16 here is a stand-in for 64-bit machine epsilon
+		epsilon_W = params['epsilon_W_prefactor']*1e-11
 
 	printing_level = params['printing_level']
 	args = (r, s, hamiltonian_terms_expectations, J, C, F.indices, F.values, epsilon_W, printing_level)
@@ -280,11 +275,12 @@ if __name__ == '__main__':
 	parser.add_argument('-dt', '--simulator_dt', type = float)
 	parser.add_argument('--unoise', type = float)
 	parser.add_argument('-n', type = int)
-	parser.add_argument('-ew','--eps_W', type = float) 
 	parser.add_argument('--st_meas', type = float)
 	parser.add_argument('--n_runs', type = int, default = 1)
 	parser.add_argument('-d', '--disorder', type = float)
 	parser.add_argument('-pl', '--printing_level', type = int)
+	parser.add_argument('-k', type = int)
+	parser.add_argument('--epsilon_W_prefactor', type = float)
 	args = parser.parse_args()
 
 	### load params dictionary
@@ -300,8 +296,6 @@ if __name__ == '__main__':
 		params['simulator_dt'] = args.simulator_dt
 	if args.n is not None:
 		params['n'] = args.n
-	if args.eps_W is not None:
-		params['epsilon_W'] = args.eps_W
 	if args.unoise is not None:
 		params['uniform_noise'] = args.unoise
 	if args.st_meas is not None:
@@ -310,6 +304,10 @@ if __name__ == '__main__':
 		params['disorder'] = args.disorder
 	if args.printing_level is not None:
 		params['printing_level'] = args.printing_level
+	if args.k is not None:
+		params['k'] = args.k
+	if args.epsilon_W_prefactor is not None:
+		params['epsilon_W_prefactor'] = args.epsilon_W_prefactor
 
 	if  params['printing_level'] > 0:
 		print()

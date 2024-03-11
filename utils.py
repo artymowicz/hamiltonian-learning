@@ -785,7 +785,7 @@ def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = '
 			title = f'{names[0]} spectrum'
 		else:
 			title = f'{names} spectra'
-
+	
 	plt.title(title)
 	plt.yscale(yscale)
 	plt.xscale(xscale)
@@ -797,7 +797,7 @@ def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = '
 ### creates a directory to save the results of the run
 def createSaveDirectory():
 	now = datetime.datetime.now()
-	dt_string = now.strftime("%d-%m-%Y--%H-%M-%S")
+	dt_string = now.strftime("%Y_%m_%d %H_%M_%S")
 	if not os.path.exists('./runs/'):
 		os.mkdir('./runs/')
 	dirname = f'./runs/{dt_string}'
@@ -807,7 +807,7 @@ def createSaveDirectory():
 	else:
 		n = 1
 		while n < 10:
-			dirname_extended = dirname + '_' + str(n)
+			dirname_extended = dirname + ' ' + str(n)
 			if not os.path.exists(dirname_extended):
 				os.mkdir(dirname_extended)
 				return dirname_extended
