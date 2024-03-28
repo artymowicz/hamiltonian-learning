@@ -1,5 +1,5 @@
 # Hamiltonian learning
-Implementation of the algorithm described in the paper _Efficient Hamiltonian reconstruction from equilibrium states_ (https://arxiv.org/abs/2403.18061). The file `hamiltonian_learning.py` contains the function `learnHamiltonianFromThermalState` which implements the algorithm. The file `tester.py` simulates a Hamiltonian reconstruction problem with measurement noise.
+Implementation of the Hamiltonian learning algorithm described in the paper _Efficient Hamiltonian reconstruction from equilibrium states_ (https://arxiv.org/abs/2403.18061). The file `hamiltonian_learning.py` contains the function `learnHamiltonianFromThermalState` which implements the algorithm. The file `tester.py` simulates a Hamiltonian reconstruction problem with measurement noise.
 
 ### Dependencies
 `hamiltonian_learning.py` requires:
@@ -12,11 +12,11 @@ Additionally, `tester.py` requires:
 - h5py (https://docs.h5py.org/en/stable/)
 - tqdm (https://tqdm.github.io/)
 
-## Interface for `learnHamiltonianFromThermalState` function
+## Documentation for `hamiltonian_learning.py`
+The `learnHamiltonianFromThermalState` function calls MOSEK on the dual problem and recovers the solutions as the dual variables of the constraints.
 
-### Input
-
-|parameter                                                    |description                                                                |
+### Interface for `learnHamiltonianFromThermalState` function:
+| Input parameter                                             |description                                                                |
 |-------------------------------------------------------------|----------------------------------------|
 | `int r`                                                     | number of perturbing operators          |
 | `int s`                                                     | number of variational hamiltonian terms            |
@@ -28,24 +28,24 @@ Additionally, `tester.py` requires:
 | `int printing_level`                                        | how much to print (0 means no output at all and 2 means detailed output)|
 
 
-### Output
-
-|parameter                                |description                                                                  |
+| Output parameter                        |description                                                                  |
 |-----------------------------------------|-----------------------------------------------------------------------------|
 |`ndarray[float] hamiltonian_coefficients`| coefficients of the recovered Hamiltonian, in the same order as h_terms_exp |
 |	`float T`                               | recovered temperature                                                       |
 |	`float mu`                              | regularization parameter mu                                                 |
 |	`int q`                                 | number of eigenvectors of W matrix that were used in the convex optimization|
 
-### Documentation for `tester.py`
-`tester.py` is a script that generates a thermal state, runs the algorithm on it and saves the results. MPS representation of the state and its expectation values are cached, and `tester.py` will use cached state/expectations if available instead of computing them. If the run is successful, a directory `./runs/[current date and time]` is created and the results are stored there.
+## Documentation for `tester.py`
+`tester.py` is a script that generates a thermal state, runs the algorithm on it and reports the results. MPS representation of the state and its expectation values are cached after being computed, and `tester.py` will use cached state/expectations if available instead of recomputing them. If the run is successful, a directory `./runs/[current date and time]` is created where the results are saved. 
 
 **How to use:**
 1. Save the desired Hamiltonian as a .yml file in the directory `./hamiltonians/` (open one of the existing .yml files to see the required format)
 2. Modify `setup.yml` to the desired parameters
 3. Run `python tester.py setup.yml` (for convenience, some parameters can be passed from the command line without modifying setup.yml . See tester.py for details)
 
-## Description of what is in the repo
+## File structure
+
+The repo contains:
 
 - `./hamiltonian_learning.py` 
 
@@ -58,3 +58,11 @@ Additionally, `tester.py` requires:
 - `./simulation.py` contains some methods used to generate the thermal states that tester.py uses
 
 - `./utils.py` contains some methods used by the other programs
+
+Additionally, after the first successful run, the following directories are created:
+
+- `./caches/` is where cached thermal states (in purified MPS form) and expectation values are stored
+
+- `./runs/` is where results are saved
+
+
