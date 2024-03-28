@@ -150,6 +150,6 @@ def learnHamiltonianFromThermalState(r: int, s: int, h_terms_exp: np.ndarray, J:
 		### recovering the optimal values of the primal program as the dual variables of the dual program
 		hamiltonian_coefficients = S@M.getConstraint("tilde_h_alpha").dual()
 		T = M.getConstraint("logDelta_dot").dual()[0]
-		mu = M.getConstraint("trace_one").dual()[0]
+		mu = -M.getConstraint("trace_one").dual()[0]
 
 	return hamiltonian_coefficients, T, mu, q
