@@ -751,7 +751,7 @@ def tprint(s):
 ### creates a directory to save the results of the run
 def createSaveDirectory():
 	now = datetime.datetime.now()
-	dt_string = now.strftime("%Y_%m_%d %H_%M_%S")
+	dt_string = now.strftime("%Y_%m_%d-%H_%M_%S")
 	if not os.path.exists('./runs/'):
 		os.mkdir('./runs/')
 	dirname = f'./runs/{dt_string}'
