@@ -7,7 +7,7 @@ Implementation of the algorithm described in the paper _Efficient Hamiltonian re
 - pyYAML (https://pyyaml.org/wiki/PyYAMLDocumentation)
 - MOSEK solver (https://www.mosek.com)
 
-`tester.py` requires:
+Additionally, `tester.py` requires:
 - TenPy (https://tenpy.readthedocs.io/)
 - h5py (https://docs.h5py.org/en/stable/)
 - tqdm (https://tqdm.github.io/)
