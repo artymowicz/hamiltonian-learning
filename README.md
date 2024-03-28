@@ -6,6 +6,7 @@ Implementation of the algorithm described in the paper _Efficient Hamiltonian re
 - python 3 with numpy (https://numpy.org/) and scipy (https://scipy.org/)
 - pyYAML (https://pyyaml.org/wiki/PyYAMLDocumentation)
 - MOSEK solver (https://www.mosek.com)
+
 `tester.py` requires:
 - TenPy (https://tenpy.readthedocs.io/)
 - h5py (https://docs.h5py.org/en/stable/)
