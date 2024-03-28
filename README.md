@@ -63,6 +63,6 @@ Additionally, after the first successful run, the following directories are crea
 
 - `./caches/` is where cached thermal states (in purified MPS form) and expectation values are stored
 
-- `./runs/` is where results are saved
+- `./runs/` is where results of tester.py are saved
 
 
