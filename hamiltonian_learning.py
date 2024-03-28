@@ -22,15 +22,15 @@ INPUT:
 	ndarray[int] F_indices         |  sparse representation (in COO format) of the tensor with 
 	ndarray[complex] F_values      |   dimensions (r,r,s) given by F_ijk = omega(b_i^* [h_k, b_j])
 
-	float epsilon_W                |  singular value threshold for computing the approximate kernel of the matrix W
+	float epsilon_W                |  eigenvalue threshold for computing the approximate kernel of the matrix W
 	int printing_level             |  how verbose the program is to be. Either 0,1, or 2.
 
 OUTPUT:
 
-	ndarray[float] hamiltonian_coefficients
-	float T
-	float mu
-	int q
+	ndarray[float] hamiltonian_coefficients   | coefficients of the recovered Hamiltonian, in the same order as h_terms_exp
+	float T                                   | recovered temperature
+	float mu                                  | regularization parameter mu
+	int q                                     | number of eigenvectors of W matrix that were used in the convex optimization
 
 '''
 

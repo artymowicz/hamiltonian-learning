@@ -4,7 +4,6 @@ import functools as ft
 import argparse
 import utils
 import itertools
-import pickle
 import time
 import h5py
 import yaml
@@ -13,7 +12,7 @@ import os
 from tqdm import tqdm
 from multiprocessing import Pool
 import functools
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from tenpy.networks.mps import MPS
 from tenpy.networks.site import SpinHalfSite
@@ -96,6 +95,11 @@ class Hamiltonian:
 					' '*(4*r - len(utils.compressPauli(self.terms[i])) + 2) +
 					f' :  {self.coefficients[i]:+.6f}')
 
+	'''
+
+	### you can uncomment and use this function if you have matplotlib installed and uncommented "import matplotlib.pyplot as plt" at the top
+
+	
 	def plot(self, title, save_filename, skip_plotting, normalization = 1):
 		thresh = normalization*1e-3
 		fig = plt.figure(1)
@@ -141,6 +145,7 @@ class Hamiltonian:
 		fig.savefig(save_filename, dpi=150)
 		if skip_plotting is False:
 			plt.show()
+	'''
 
 	def normalizedCoeffs(self,expectations_dict):
 		assert self.terms[0] == 'I'*self.n
@@ -900,6 +905,7 @@ def stringToDict(s):
 	return d
 
 identity = lambda x : x 
+
 def strToBool(s):
 	if s == 'True' or s == 'T' or s == 't' or s == '1':
 		return True
@@ -907,7 +913,8 @@ def strToBool(s):
 		return False
 	else:
 		raise ValueError
-### keys are parameters loaded in loadHamiltonian function and values are the function used to parse the corresponding value
+
+### functions used to parse values in loadHamiltonian
 param_conversions = {
 					'n' : int,
 					'k' : int,				

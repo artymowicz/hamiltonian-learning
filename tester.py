@@ -2,11 +2,9 @@ from simulation import Hamiltonian, Simulator
 import hamiltonian_learning
 import utils
 import os
-import pickle
 import sys
 import numpy as np
 import scipy
-import matplotlib.pyplot as plt
 import yaml
 import argparse
 import textwrap

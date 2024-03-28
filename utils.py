@@ -5,8 +5,6 @@ import functools as ft
 import datetime
 import os
 import time
-from matplotlib import colormaps
-import matplotlib.pyplot as plt
 
 class SparseTensor:
 	def __init__(self,*args, order = False, dtype = None):
@@ -747,50 +745,6 @@ def buildTripleProductTensor(onebody_operators, hamiltonian_terms, threebody_ope
 def tprint(s):
 	current_time_string = time.strftime("%H:%M:%S", time.localtime())
 	print(f'{current_time_string}: {s}')
-
-### given a list of matrices, plots their spectra
-def plotSpec(*matrices, hermitean = True, names = None, title = None, xscale = 'linear', yscale = 'linear', print_lowest = None, print_highest = None):
-	cmap = colormaps['viridis']
-
-	if names is not None:
-		assert len(matrices) == len(names)
-	else:
-		names = [None]*len(matrices)
-
-	for i in range(len(matrices)):
-		if hermitean:
-			eigs = scipy.linalg.eigvalsh(matrices[i])
-			plt.scatter(np.arange(len(eigs)), eigs, s=2, label = names[i])
-		else:
-			eigs =  scipy.linalg.eigvals(matrices[i])
-			plt.scatter(np.arange(len(eigs)), np.real(eigs), s=2, label = names[i] + 'real', c =cmap(i/len(matrices)) )
-			plt.scatter(np.arange(len(eigs)), np.imag(eigs), marker = "^", s=2, label = names[i] + 'imaginary',c =cmap(i/len(matrices)))
-
-		if print_lowest is not None:
-			print_lowest = min(print_lowest, len(eigs))
-			tprint(f'{print_lowest} lowest eigenvalues of {names[i]}:')
-			for i in range(print_lowest):
-				tprint(eigs[i])
-			print()
-
-		if print_highest is not None:
-			print_highest = min(print_highest, len(eigs))
-			tprint(f'{print_highest} highest eigenvalues of {names[i]}:')
-			for i in range(print_highest):
-				tprint(eigs[len(eigs)-i-1])
-			print()
-
-	if title is None:
-		if len(matrices) == 1:
-			title = f'{names[0]} spectrum'
-		else:
-			title = f'{names} spectra'
-	
-	plt.title(title)
-	plt.yscale(yscale)
-	plt.xscale(xscale)
-	plt.legend()
-	plt.show()
 
 ##### LOADING AND SAVING
 
