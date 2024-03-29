@@ -1,5 +1,5 @@
 # Hamiltonian learning
-Implementation of the Hamiltonian learning algorithm described in the paper _Efficient Hamiltonian reconstruction from equilibrium states_ (https://arxiv.org/abs/2403.18061). The file `hamiltonian_learning.py` contains the function `learnHamiltonianFromThermalState` which implements the algorithm. The file `tester.py` simulates a Hamiltonian reconstruction problem with measurement noise.
+Implementation of the algorithm described in the paper _Efficient Hamiltonian reconstruction from equilibrium states_ (https://arxiv.org/abs/2403.18061). The file `hamiltonian_learning.py` contains the function `learnHamiltonianFromThermalState` which implements the algorithm. The file `tester.py` simulates a Hamiltonian reconstruction problem with measurement noise.
 
 ### Dependencies
 `hamiltonian_learning.py` requires:
